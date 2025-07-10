@@ -14,24 +14,23 @@ class FirebaseManager: ObservableObject {
     @Published var errorMessage = ""
     @Published var isConnected = false
     
+    private var customersListener: ListenerRegistration?
+    private var middlemenListener: ListenerRegistration?
+    private var suppliersListener: ListenerRegistration?
+    
     private init() {
-        // Configure Firestore for online-only mode
         configureFirestore()
         startNetworkMonitoring()
     }
     
     private func configureFirestore() {
-        // Disable offline persistence - forces online-only mode
         let settings = FirestoreSettings()
         settings.isPersistenceEnabled = false
         settings.isSSLEnabled = true
-        
-        // Try to resolve connectivity issues
         settings.host = "firestore.googleapis.com"
         
         db.settings = settings
         
-        // Debug: Print Firebase project info
         if let app = FirebaseApp.app() {
             let projectID = app.options.projectID
             print("🔧 Connected to Firebase Project: \(projectID)")
@@ -40,16 +39,13 @@ class FirebaseManager: ObservableObject {
             print("🔧 App Bundle ID: \(bundleID)")
         }
         
-        // Test network connectivity to Google
         testNetworkConnectivity()
-        
         print("🔧 Configured Firestore for online-only mode")
     }
     
     private func testNetworkConnectivity() {
         print("🔍 Testing network connectivity...")
         
-        // Test if we can reach Google DNS
         let url = URL(string: "https://dns.google")!
         let task = URLSession.shared.dataTask(with: url) { data, response, error in
             DispatchQueue.main.async {
@@ -62,7 +58,6 @@ class FirebaseManager: ObservableObject {
         }
         task.resume()
         
-        // Test specific Firebase endpoint
         let firebaseURL = URL(string: "https://firestore.googleapis.com")!
         let firebaseTask = URLSession.shared.dataTask(with: firebaseURL) { data, response, error in
             DispatchQueue.main.async {
@@ -83,9 +78,8 @@ class FirebaseManager: ObservableObject {
                 print("🌐 Network status: \(path.status == .satisfied ? "Connected" : "Disconnected")")
                 
                 if path.status == .satisfied {
-                    // Wait a moment for connection to stabilize
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        self?.fetchCustomers()
+                        self?.fetchAllCustomers()
                     }
                 } else {
                     self?.errorMessage = "No internet connection. Please check your network settings."
@@ -97,121 +91,154 @@ class FirebaseManager: ObservableObject {
         monitor.start(queue: queue)
     }
     
-    func fetchCustomers() {
+    func fetchAllCustomers() {
         guard isConnected else {
             errorMessage = "No internet connection. Cannot fetch customers."
             print("❌ No internet connection available")
             return
         }
         
-        print("🔍 Fetching customers from Firestore (online-only mode)...")
+        print("🔍 Fetching all customers from multiple collections...")
         isLoading = true
         errorMessage = ""
         
-        // Use real-time listener for immediate updates
-        db.collection("Customers")
+        // Remove existing listeners
+        customersListener?.remove()
+        middlemenListener?.remove()
+        suppliersListener?.remove()
+        
+        // Fetch from Customers collection
+        customersListener = db.collection("Customers")
             .addSnapshotListener { [weak self] querySnapshot, error in
+                self?.handleCollectionUpdate(querySnapshot: querySnapshot, error: error, type: .customer)
+            }
+        
+        // Fetch from Middlemen collection
+        middlemenListener = db.collection("Middlemen")
+            .addSnapshotListener { [weak self] querySnapshot, error in
+                self?.handleCollectionUpdate(querySnapshot: querySnapshot, error: error, type: .middleman)
+            }
+        
+        // Fetch from Suppliers collection
+        suppliersListener = db.collection("Suppliers")
+            .addSnapshotListener { [weak self] querySnapshot, error in
+                self?.handleCollectionUpdate(querySnapshot: querySnapshot, error: error, type: .supplier)
+            }
+    }
+    
+    private func handleCollectionUpdate(querySnapshot: QuerySnapshot?, error: Error?, type: CustomerType) {
+        DispatchQueue.main.async {
+            if let error = error {
+                print("❌ Firestore Error for \(type.rawValue): \(error.localizedDescription)")
                 
-                DispatchQueue.main.async {
-                    self?.isLoading = false
+                if error.localizedDescription.contains("network") ||
+                   error.localizedDescription.contains("connection") ||
+                   error.localizedDescription.contains("Unavailable") {
+                    self.errorMessage = "Network connection error. Please check your internet connection and firewall settings."
+                } else {
+                    self.errorMessage = "Database error: \(error.localizedDescription)"
+                }
+                self.isLoading = false
+                return
+            }
+            
+            guard let querySnapshot = querySnapshot else {
+                print("⚠️ QuerySnapshot is nil for \(type.rawValue)")
+                self.isLoading = false
+                return
+            }
+            
+            let documents = querySnapshot.documents
+            print("📄 Found \(documents.count) documents in '\(type.rawValue)' collection")
+            
+            var collectionCustomers: [Customer] = []
+            
+            for document in documents {
+                let documentID = document.documentID
+                let data = document.data()
+                
+                print("📋 \(type.rawValue) Document ID: \(documentID)")
+                
+                if let name = data["name"] as? String, !name.isEmpty {
+                    print("👤 Found \(type.rawValue.lowercased()): '\(name)'")
                     
-                    if let error = error {
-                        print("❌ Firestore Error: \(error.localizedDescription)")
-                        
-                        // Check for specific connectivity errors
-                        if error.localizedDescription.contains("network") ||
-                           error.localizedDescription.contains("connection") ||
-                           error.localizedDescription.contains("Unavailable") {
-                            self?.errorMessage = "Network connection error. Please check your internet connection and firewall settings."
-                        } else {
-                            self?.errorMessage = "Database error: \(error.localizedDescription)"
-                        }
-                        return
+                    // For customers, read all fields. For middlemen/suppliers, only name and balance
+                    let phone: String
+                    let email: String
+                    let address: String
+                    let notes: String
+                    
+                    if type == .customer {
+                        phone = data["phone"] as? String ?? ""
+                        email = data["email"] as? String ?? ""
+                        address = data["address"] as? String ?? ""
+                        notes = data["notes"] as? String ?? ""
+                    } else {
+                        // Middlemen and Suppliers only need name and balance
+                        phone = ""
+                        email = ""
+                        address = ""
+                        notes = ""
                     }
                     
-                    guard let querySnapshot = querySnapshot else {
-                        print("⚠️ QuerySnapshot is nil")
-                        self?.errorMessage = "No data received from database"
-                        return
+                    // Handle balance flexibly for all types
+                    var balance: Double = 0.0
+                    if let balanceDouble = data["balance"] as? Double {
+                        balance = balanceDouble
+                    } else if let balanceInt = data["balance"] as? Int {
+                        balance = Double(balanceInt)
+                    } else if let balanceString = data["balance"] as? String,
+                             let balanceParsed = Double(balanceString) {
+                        balance = balanceParsed
                     }
                     
-                    let documents = querySnapshot.documents
-                    print("📄 Found \(documents.count) documents in 'Customers' collection")
+                    print("💰 \(type.rawValue) '\(name)' balance: $\(balance)")
                     
-                    // Let's also try checking other possible collection names
-                    if documents.isEmpty {
-                        print("⚠️ No documents in 'Customers' collection")
-                        print("🔍 Let's check if collection name is different...")
-                        self?.checkOtherCollectionNames()
-                    }
+                    let customer = Customer(
+                        id: documentID,
+                        name: name,
+                        phone: phone,
+                        email: email,
+                        address: address,
+                        notes: notes,
+                        balance: balance,
+                        type: type,
+                        createdAt: type == .customer ? (data["createdAt"] as? Timestamp) : nil,
+                        updatedAt: type == .customer ? (data["updatedAt"] as? Timestamp) : nil
+                    )
                     
-                    if documents.isEmpty {
-                        print("⚠️ No customers found in the collection")
-                        self?.errorMessage = "No customers found in database"
-                        self?.customers = []
-                        return
-                    }
-                    
-                    var loadedCustomers: [Customer] = []
-                    
-                    for document in documents {
-                        let documentID = document.documentID
-                        let data = document.data()
-                        
-                        print("📋 Document ID: \(documentID)")
-                        print("📋 Document Fields: \(Array(data.keys))")
-                        
-                        // Check if name field exists and is not empty
-                        if let name = data["name"] as? String, !name.isEmpty {
-                            print("👤 Found customer: '\(name)'")
-                            
-                            // Extract all fields with fallbacks
-                            let phone = data["phone"] as? String ?? ""
-                            let email = data["email"] as? String ?? ""
-                            let address = data["address"] as? String ?? ""
-                            let notes = data["notes"] as? String ?? ""
-                            
-                            // Handle balance flexibly
-                            var balance: Double = 0.0
-                            if let balanceDouble = data["balance"] as? Double {
-                                balance = balanceDouble
-                            } else if let balanceInt = data["balance"] as? Int {
-                                balance = Double(balanceInt)
-                            } else if let balanceString = data["balance"] as? String,
-                                     let balanceParsed = Double(balanceString) {
-                                balance = balanceParsed
-                            }
-                            
-                            let customer = Customer(
-                                id: documentID,
-                                name: name,
-                                phone: phone,
-                                email: email,
-                                address: address,
-                                notes: notes,
-                                balance: balance,
-                                createdAt: data["createdAt"] as? Timestamp,
-                                updatedAt: data["updatedAt"] as? Timestamp
-                            )
-                            
-                            loadedCustomers.append(customer)
-                        } else {
-                            print("⚠️ Document \(documentID) missing or empty 'name' field")
-                        }
-                    }
-                    
-                    // Sort by name
-                    loadedCustomers.sort { $0.name.lowercased() < $1.name.lowercased() }
-                    
-                    self?.customers = loadedCustomers
-                    self?.errorMessage = ""
-                    
-                    print("✅ Successfully loaded \(loadedCustomers.count) customers:")
-                    for customer in loadedCustomers {
-                        print("  - \(customer.name) (Balance: $\(customer.balance))")
-                    }
+                    collectionCustomers.append(customer)
+                } else {
+                    print("⚠️ \(type.rawValue) Document \(documentID) missing or empty 'name' field")
                 }
             }
+            
+            // Update the combined list
+            self.updateCombinedCustomersList(newCustomers: collectionCustomers, type: type)
+        }
+    }
+    
+    private func updateCombinedCustomersList(newCustomers: [Customer], type: CustomerType) {
+        // Remove existing customers of this type
+        customers.removeAll { $0.type == type }
+        
+        // Add new customers of this type
+        customers.append(contentsOf: newCustomers)
+        
+        // Sort by name
+        customers.sort { $0.name.lowercased() < $1.name.lowercased() }
+        
+        isLoading = false
+        errorMessage = ""
+        
+        let typeCount = customers.filter { $0.type == type }.count
+        print("✅ Successfully loaded \(typeCount) \(type.rawValue.lowercased())s")
+        print("📊 Total combined: \(customers.count) entries (\(customers.filter{$0.type == .customer}.count) customers, \(customers.filter{$0.type == .middleman}.count) middlemen, \(customers.filter{$0.type == .supplier}.count) suppliers)")
+        
+        // Show only names and balances for cleaner logging
+        for customer in customers.filter({ $0.type == type }) {
+            print("  - [\(customer.type.shortTag)] \(customer.name) → $\(customer.balance)")
+        }
     }
     
     func addCustomer(_ customer: Customer) async throws {
@@ -219,36 +246,25 @@ class FirebaseManager: ObservableObject {
             throw NSError(domain: "NetworkError", code: 0, userInfo: [NSLocalizedDescriptionKey: "No internet connection"])
         }
         
-        print("💾 Adding new customer: \(customer.name)")
-        let docRef = db.collection("Customers").document()
+        print("💾 Adding new \(customer.type.rawValue.lowercased()): \(customer.name)")
+        
+        let collectionName = "\(customer.type.rawValue)s"
+        let docRef = db.collection(collectionName).document()
         var newCustomer = customer
         newCustomer.id = docRef.documentID
         
         try await docRef.setData(newCustomer.toDictionary())
-        print("✅ Customer added successfully")
+        print("✅ \(customer.type.rawValue) added successfully")
     }
     
     func retryConnection() {
         print("🔄 Retrying connection...")
-        fetchCustomers()
+        fetchAllCustomers()
     }
     
-    private func checkOtherCollectionNames() {
-        // Check if the collection might have a different name
-        let possibleNames = ["customers", "Customers", "CUSTOMERS", "customer", "Customer"]
-        
-        for collectionName in possibleNames {
-            db.collection(collectionName).getDocuments { querySnapshot, error in
-                if let documents = querySnapshot?.documents, !documents.isEmpty {
-                    print("🔍 Found \(documents.count) documents in '\(collectionName)' collection!")
-                    print("🔍 Document IDs: \(documents.map { $0.documentID })")
-                    
-                    // Show first document data to verify structure
-                    if let firstDoc = documents.first {
-                        print("🔍 First document data: \(firstDoc.data())")
-                    }
-                }
-            }
-        }
+    deinit {
+        customersListener?.remove()
+        middlemenListener?.remove()
+        suppliersListener?.remove()
     }
 }

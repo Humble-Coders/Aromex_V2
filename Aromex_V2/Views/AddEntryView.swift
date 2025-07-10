@@ -52,7 +52,7 @@ struct AddEntryView: View {
                 headerView
                 
                 // Main Content Area
-                VStack(spacing: 24) {
+                VStack(spacing: 32) {
                     // Transaction Section
                     transactionSection
                     
@@ -60,9 +60,9 @@ struct AddEntryView: View {
                     if firebaseManager.isLoading {
                         HStack {
                             ProgressView()
-                                .scaleEffect(0.8)
+                                .scaleEffect(1.2)
                             Text("Loading customers...")
-                                .font(.caption)
+                                .font(.body)
                                 .foregroundColor(.secondary)
                         }
                         .padding()
@@ -71,62 +71,65 @@ struct AddEntryView: View {
                     if !firebaseManager.isConnected {
                         HStack {
                             Image(systemName: "wifi.slash")
+                                .font(.body)
                                 .foregroundColor(.red)
                             Text("No internet connection")
-                                .font(.caption)
+                                .font(.body)
                                 .foregroundColor(.red)
                             
                             Button("Retry") {
                                 firebaseManager.retryConnection()
                             }
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .font(.body)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
                             .background(Color.blue)
                             .foregroundColor(.white)
-                            .cornerRadius(4)
+                            .cornerRadius(8)
                         }
                         .padding()
                         .background(Color.red.opacity(0.1))
-                        .cornerRadius(8)
+                        .cornerRadius(12)
                         .padding(.horizontal, 32)
                     }
                     
                     if !firebaseManager.errorMessage.isEmpty {
                         HStack {
                             Image(systemName: "exclamationmark.triangle")
+                                .font(.body)
                                 .foregroundColor(.orange)
                             Text(firebaseManager.errorMessage)
-                                .font(.caption)
+                                .font(.body)
                                 .foregroundColor(.orange)
                             
                             Button("Retry") {
                                 firebaseManager.retryConnection()
                             }
-                            .font(.caption)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
+                            .font(.body)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
                             .background(Color.orange)
                             .foregroundColor(.white)
-                            .cornerRadius(4)
+                            .cornerRadius(8)
                         }
                         .padding()
                         .background(Color.orange.opacity(0.1))
-                        .cornerRadius(8)
+                        .cornerRadius(12)
                         .padding(.horizontal, 32)
                     }
                     
                     // Customer count for debugging
                     HStack {
                         Image(systemName: firebaseManager.isConnected ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .font(.body)
                             .foregroundColor(firebaseManager.isConnected ? .green : .red)
                         Text("Found \(firebaseManager.customers.count) customers")
-                            .font(.caption)
+                            .font(.body)
                             .foregroundColor(.secondary)
                         
                         if firebaseManager.isConnected {
                             Text("• Connected")
-                                .font(.caption)
+                                .font(.body)
                                 .foregroundColor(.green)
                         }
                     }
@@ -134,7 +137,7 @@ struct AddEntryView: View {
                     
                     Spacer()
                 }
-                .padding(.top, 32)
+                .padding(.top, 40)
                 .background(Color.systemBackground)
             }
             
@@ -176,13 +179,13 @@ struct AddEntryView: View {
             
             HStack {
                 // Logo and Title
-                HStack(spacing: 12) {
+                HStack(spacing: 16) {
                     Image(systemName: "building.2.crop.circle.fill")
-                        .font(.title)
+                        .font(.largeTitle)
                         .foregroundColor(.white)
                     
                     Text("AROMEX")
-                        .font(.title2)
+                        .font(.title)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                 }
@@ -191,7 +194,7 @@ struct AddEntryView: View {
                 
                 // Center Title
                 Text("Transaction Entry")
-                    .font(.headline)
+                    .font(.title2)
                     .foregroundColor(.white.opacity(0.9))
                 
                 Spacer()
@@ -199,28 +202,28 @@ struct AddEntryView: View {
                 // User Profile
                 Button(action: {}) {
                     Image(systemName: "person.crop.circle.fill")
-                        .font(.title2)
+                        .font(.largeTitle)
                         .foregroundColor(.white.opacity(0.8))
                 }
                 .buttonStyle(PlainButtonStyle())
             }
             .padding(.horizontal, 32)
-            .padding(.vertical, 20)
+            .padding(.vertical, 24)
         }
-        .frame(height: 80)
+        .frame(height: 100)
     }
     
     private var transactionSection: some View {
-        VStack(spacing: 32) {
+        VStack(spacing: 40) {
             // Section Header
             HStack {
-                HStack(spacing: 12) {
+                HStack(spacing: 16) {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.title2)
+                        .font(.title)
                         .foregroundColor(.gray)
                     
                     Text("New Transaction")
-                        .font(.title2)
+                        .font(.title)
                         .fontWeight(.semibold)
                         .foregroundColor(.primary)
                 }
@@ -228,27 +231,29 @@ struct AddEntryView: View {
                 Spacer()
                 
                 // Exchange Toggle
-                HStack(spacing: 12) {
+                HStack(spacing: 16) {
                     Text("Exchange")
-                        .font(.subheadline)
+                        .font(.body)
                         .foregroundColor(.secondary)
                     
                     Toggle("", isOn: $isExchangeOn)
                         .toggleStyle(SwitchToggleStyle(tint: .blue))
+                        .scaleEffect(1.2)
                         .labelsHidden()
                 }
             }
             .padding(.horizontal, 32)
             
             // Transaction Form
-            VStack(spacing: 24) {
+            VStack(spacing: 32) {
                 // Main Transaction Row
-                HStack(spacing: 16) {
+                HStack(spacing: 20) {
                     // From Dropdown
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Text("From")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(.body)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
                         
                         SimpleDropdownButton(
                             selectedCustomer: selectedFromCustomer,
@@ -256,30 +261,44 @@ struct AddEntryView: View {
                             isOpen: $selectedFromDropdownOpen,
                             buttonFrame: $fromButtonFrame
                         )
-                        .frame(width: 160)
+                        .frame(width: 200, height: 50)
                     }
                     
                     // Arrow with "gives to"
-                    VStack(spacing: 4) {
-                        Image(systemName: "arrow.right")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
+                    VStack(alignment: .center, spacing: 8) {
+                        Text("")
+                            .font(.body)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.clear)
                         
-                        Text("gives to")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 2)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(4)
+                        HStack(spacing: 6) {
+                            Text("gives to")
+                                .font(.callout)
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+                            
+                            Image(systemName: "arrow.right")
+                                .font(.callout)
+                                .fontWeight(.medium)
+                                .foregroundColor(.blue)
+                        }
+                        .frame(height: 50)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.blue.opacity(0.05))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+                        )
                     }
-                    .frame(width: 80)
+                    .frame(width: 100)
                     
                     // To Dropdown
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Text("To")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(.body)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
                         
                         SimpleDropdownButton(
                             selectedCustomer: selectedToCustomer,
@@ -287,67 +306,101 @@ struct AddEntryView: View {
                             isOpen: $selectedToDropdownOpen,
                             buttonFrame: $toButtonFrame
                         )
-                        .frame(width: 160)
+                        .frame(width: 200, height: 50)
                     }
                     
                     // Amount Field
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("USD")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Amount (USD)")
+                            .font(.body)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
                         
-                        HStack(spacing: 4) {
+                        HStack(spacing: 8) {
                             Text("$")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
+                                .font(.title2)
+                                .fontWeight(.medium)
+                                .foregroundColor(.primary)
                             
-                            TextField("Amount", text: $amount)
-                                .font(.subheadline)
+                            TextField("0.00", text: $amount)
+                                .font(.body)
+                                .fontWeight(.medium)
 #if os(iOS)
                                 .keyboardType(.decimalPad)
 #endif
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(6)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white)
+                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        )
+                        .frame(height: 50)
                     }
-                    .frame(width: 120)
+                    .frame(width: 140)
                     
                     // Add Customer Button
-                    VStack(spacing: 6) {
-                        Text("")
-                            .font(.caption)
+                    VStack(spacing: 8) {
+                        Text("New Customer")
+                            .font(.callout)
+                            .fontWeight(.medium)
+                            .foregroundColor(.blue)
                         
                         Button(action: {
                             showingAddCustomerDialog = true
                         }) {
                             Image(systemName: "person.badge.plus")
-                                .font(.subheadline)
+                                .font(.title2)
+                                .fontWeight(.medium)
                                 .foregroundColor(.white)
-                                .frame(width: 36, height: 36)
-                                .background(Color.blue)
-                                .cornerRadius(6)
+                                .frame(width: 50, height: 50)
+                                .background(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .cornerRadius(10)
+                                .shadow(color: .blue.opacity(0.3), radius: 4, x: 0, y: 2)
                         }
                         .buttonStyle(PlainButtonStyle())
                     }
                     
                     // Add Entry Button
-                    VStack(spacing: 6) {
-                        Text("")
-                            .font(.caption)
+                    VStack(spacing: 8) {
+                        Text("Complete Transaction")
+                            .font(.callout)
+                            .fontWeight(.medium)
+                            .foregroundColor(Color(red: 0.3, green: 0.4, blue: 0.6))
                         
                         Button(action: {
                             // Non-functional as requested
                         }) {
                             Text("Add Entry")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
+                                .font(.body)
+                                .fontWeight(.semibold)
                                 .foregroundColor(.white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color(red: 0.3, green: 0.4, blue: 0.6))
-                                .cornerRadius(6)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 12)
+                                .background(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [
+                                            Color(red: 0.3, green: 0.4, blue: 0.6),
+                                            Color(red: 0.25, green: 0.35, blue: 0.55)
+                                        ]),
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .cornerRadius(10)
+                                .shadow(color: Color(red: 0.3, green: 0.4, blue: 0.6).opacity(0.3), radius: 4, x: 0, y: 2)
+                                .frame(height: 50)
                         }
                         .buttonStyle(PlainButtonStyle())
                     }
@@ -355,23 +408,32 @@ struct AddEntryView: View {
                 .padding(.horizontal, 32)
                 
                 // Notes Section
-                HStack(spacing: 12) {
+                HStack(spacing: 16) {
                     Image(systemName: "note.text")
-                        .foregroundColor(.secondary)
+                        .font(.title2)
+                        .foregroundColor(.blue)
                     
                     TextField("Add notes (optional)", text: $notes)
-                        .font(.subheadline)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(6)
+                        .font(.body)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white)
+                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                        )
+                        .frame(height: 50)
                 }
                 .padding(.horizontal, 32)
             }
-            .padding(.vertical, 24)
+            .padding(.vertical, 32)
             .background(Color.white)
-            .cornerRadius(12)
-            .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 2)
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
             .padding(.horizontal, 32)
         }
     }
@@ -390,31 +452,36 @@ struct SimpleDropdownButton: View {
                 isOpen.toggle()
             }
         }) {
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 if let selectedCustomer = selectedCustomer {
-                    Text(selectedCustomer.name)
-                        .font(.subheadline)
+                    Text(selectedCustomer.displayNameWithTag)
+                        .font(.body)
+                        .fontWeight(.medium)
                         .foregroundColor(.primary)
                         .lineLimit(1)
                 } else {
                     Text(placeholder)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                        .font(.body)
+                        .foregroundColor(.primary.opacity(0.6))
                 }
                 
                 Spacer()
                 
                 Image(systemName: isOpen ? "chevron.up" : "chevron.down")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(.blue)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.gray.opacity(0.1))
-            .cornerRadius(6)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+            )
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isOpen ? Color.blue.opacity(0.5) : Color.gray.opacity(0.3), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isOpen ? Color.blue.opacity(0.6) : Color.gray.opacity(0.3), lineWidth: isOpen ? 2 : 1)
             )
         }
         .buttonStyle(PlainButtonStyle())
@@ -452,24 +519,24 @@ struct CustomerDropdownOverlay: View {
             Divider()
             customerList
         }
-        .frame(width: 200)
+        .frame(width: 250)
         .background(Color.white)
-        .cornerRadius(8)
-        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 4)
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 6)
     }
     
     private var searchField: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
-                .font(.caption)
+                .font(.body)
             
             TextField("Search...", text: $searchText)
-                .font(.caption)
+                .font(.body)
                 .textFieldStyle(PlainTextFieldStyle())
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(Color.gray.opacity(0.05))
     }
     
@@ -481,7 +548,7 @@ struct CustomerDropdownOverlay: View {
                 }
             }
         }
-        .frame(height: min(CGFloat(filteredCustomers.count) * 44, 200))
+        .frame(height: min(CGFloat(filteredCustomers.count) * 60, 240))
     }
     
     private func customerRow(customer: Customer) -> some View {
@@ -491,22 +558,36 @@ struct CustomerDropdownOverlay: View {
                 isOpen = false
             }
         }) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(customer.name)
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(customer.name)
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                        
+                        Text("[\(customer.type.shortTag)]")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(customer.type == .customer ? Color.blue :
+                                          customer.type == .middleman ? Color.orange : Color.green)
+                            )
+                    }
                     
                     Text("$\(customer.balance, specifier: "%.2f")")
-                        .font(.caption2)
+                        .font(.callout)
                         .foregroundColor(customer.balance >= 0 ? .green : .red)
                 }
                 
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
             .background(
                 selectedCustomer?.id == customer.id ?
                 Color.blue.opacity(0.1) : Color.clear
@@ -529,7 +610,7 @@ struct CustomerDropdownOverlay: View {
                 dropdownContent
                     .position(
                         x: buttonFrame.midX,
-                        y: buttonFrame.maxY + 10 + (min(CGFloat(filteredCustomers.count) * 44, 200) / 2)
+                        y: buttonFrame.maxY + 15 + (min(CGFloat(filteredCustomers.count) * 60, 240) / 2)
                     )
             )
     }
