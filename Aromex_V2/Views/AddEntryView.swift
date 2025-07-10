@@ -39,101 +39,55 @@ struct AddEntryView: View {
     @State private var isExchangeOn: Bool = false
     @State private var showingAddCustomerDialog: Bool = false
     
-    // Dropdown states for global overlays
+    // Dropdown states
     @State private var selectedFromDropdownOpen: Bool = false
     @State private var selectedToDropdownOpen: Bool = false
     @State private var fromButtonFrame: CGRect = .zero
     @State private var toButtonFrame: CGRect = .zero
     
+    // Separate search text for each dropdown
+    @State private var fromSearchText: String = ""
+    @State private var toSearchText: String = ""
+    
+    // Focus states for dropdown search fields
+    @FocusState private var isFromFieldFocused: Bool
+    @FocusState private var isToFieldFocused: Bool
+    @FocusState private var isAmountFieldFocused: Bool
+    
+    // Filtered customers
+    private var filteredFromCustomers: [Customer] {
+        if fromSearchText.isEmpty {
+            return firebaseManager.customers
+        } else {
+            return firebaseManager.customers.filter {
+                $0.name.localizedCaseInsensitiveContains(fromSearchText)
+            }
+        }
+    }
+    
+    private var filteredToCustomers: [Customer] {
+        if toSearchText.isEmpty {
+            return firebaseManager.customers
+        } else {
+            return firebaseManager.customers.filter {
+                $0.name.localizedCaseInsensitiveContains(toSearchText)
+            }
+        }
+    }
+    
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                // Professional Header
+                // Header
                 headerView
                 
-                // Main Content Area
+                // Main Content
                 VStack(spacing: 32) {
                     // Transaction Section
                     transactionSection
                     
-                    // Debug Info and Network Status
-                    if firebaseManager.isLoading {
-                        HStack {
-                            ProgressView()
-                                .scaleEffect(1.2)
-                            Text("Loading customers...")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding()
-                    }
-                    
-                    if !firebaseManager.isConnected {
-                        HStack {
-                            Image(systemName: "wifi.slash")
-                                .font(.body)
-                                .foregroundColor(.red)
-                            Text("No internet connection")
-                                .font(.body)
-                                .foregroundColor(.red)
-                            
-                            Button("Retry") {
-                                firebaseManager.retryConnection()
-                            }
-                            .font(.body)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                        }
-                        .padding()
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(12)
-                        .padding(.horizontal, 32)
-                    }
-                    
-                    if !firebaseManager.errorMessage.isEmpty {
-                        HStack {
-                            Image(systemName: "exclamationmark.triangle")
-                                .font(.body)
-                                .foregroundColor(.orange)
-                            Text(firebaseManager.errorMessage)
-                                .font(.body)
-                                .foregroundColor(.orange)
-                            
-                            Button("Retry") {
-                                firebaseManager.retryConnection()
-                            }
-                            .font(.body)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.orange)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
-                        }
-                        .padding()
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(12)
-                        .padding(.horizontal, 32)
-                    }
-                    
-                    // Customer count for debugging
-                    HStack {
-                        Image(systemName: firebaseManager.isConnected ? "checkmark.circle.fill" : "xmark.circle.fill")
-                            .font(.body)
-                            .foregroundColor(firebaseManager.isConnected ? .green : .red)
-                        Text("Found \(firebaseManager.customers.count) customers")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                        
-                        if firebaseManager.isConnected {
-                            Text("• Connected")
-                                .font(.body)
-                                .foregroundColor(.green)
-                        }
-                    }
-                    .padding(.horizontal, 32)
+                    // Status indicators
+                    statusIndicators
                     
                     Spacer()
                 }
@@ -146,7 +100,7 @@ struct AddEntryView: View {
                 CustomerDropdownOverlay(
                     isOpen: $selectedFromDropdownOpen,
                     selectedCustomer: $selectedFromCustomer,
-                    customers: firebaseManager.customers,
+                    customers: filteredFromCustomers,
                     buttonFrame: fromButtonFrame
                 )
             }
@@ -155,9 +109,26 @@ struct AddEntryView: View {
                 CustomerDropdownOverlay(
                     isOpen: $selectedToDropdownOpen,
                     selectedCustomer: $selectedToCustomer,
-                    customers: firebaseManager.customers,
+                    customers: filteredToCustomers,
                     buttonFrame: toButtonFrame
                 )
+            }
+        }
+        // Remove default focus from amount
+        .onAppear {
+            isAmountFieldFocused = false
+        }
+        // Manage focus and clear search when dropdowns open/close
+        .onChange(of: selectedFromDropdownOpen) { isOpen in
+            isFromFieldFocused = isOpen
+            if isOpen {
+                isAmountFieldFocused = false
+            }
+        }
+        .onChange(of: selectedToDropdownOpen) { isOpen in
+            isToFieldFocused = isOpen
+            if isOpen {
+                isAmountFieldFocused = false
             }
         }
         .sheet(isPresented: $showingAddCustomerDialog) {
@@ -167,7 +138,6 @@ struct AddEntryView: View {
     
     private var headerView: some View {
         ZStack {
-            // Background gradient
             LinearGradient(
                 gradient: Gradient(colors: [
                     Color(red: 0.2, green: 0.3, blue: 0.5),
@@ -178,7 +148,6 @@ struct AddEntryView: View {
             )
             
             HStack {
-                // Logo and Title
                 HStack(spacing: 16) {
                     Image(systemName: "building.2.crop.circle.fill")
                         .font(.largeTitle)
@@ -192,14 +161,12 @@ struct AddEntryView: View {
                 
                 Spacer()
                 
-                // Center Title
                 Text("Transaction Entry")
                     .font(.title2)
                     .foregroundColor(.white.opacity(0.9))
                 
                 Spacer()
                 
-                // User Profile
                 Button(action: {}) {
                     Image(systemName: "person.crop.circle.fill")
                         .font(.largeTitle)
@@ -230,7 +197,6 @@ struct AddEntryView: View {
                 
                 Spacer()
                 
-                // Exchange Toggle
                 HStack(spacing: 16) {
                     Text("Exchange")
                         .font(.body)
@@ -259,12 +225,14 @@ struct AddEntryView: View {
                             selectedCustomer: selectedFromCustomer,
                             placeholder: "Select customer",
                             isOpen: $selectedFromDropdownOpen,
-                            buttonFrame: $fromButtonFrame
+                            buttonFrame: $fromButtonFrame,
+                            searchText: $fromSearchText,
+                            isFocused: $isFromFieldFocused
                         )
                         .frame(width: 200, height: 50)
                     }
                     
-                    // Arrow with "gives to"
+                    // Arrow
                     VStack(alignment: .center, spacing: 8) {
                         Text("")
                             .font(.body)
@@ -304,14 +272,16 @@ struct AddEntryView: View {
                             selectedCustomer: selectedToCustomer,
                             placeholder: "Select customer",
                             isOpen: $selectedToDropdownOpen,
-                            buttonFrame: $toButtonFrame
+                            buttonFrame: $toButtonFrame,
+                            searchText: $toSearchText,
+                            isFocused: $isToFieldFocused
                         )
                         .frame(width: 200, height: 50)
                     }
                     
                     // Amount Field
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Amount (USD)")
+                        Text("Amount")
                             .font(.body)
                             .fontWeight(.semibold)
                             .foregroundColor(.primary)
@@ -325,9 +295,10 @@ struct AddEntryView: View {
                             TextField("0.00", text: $amount)
                                 .font(.body)
                                 .fontWeight(.medium)
-#if os(iOS)
+                                .focused($isAmountFieldFocused)
+    #if os(iOS)
                                 .keyboardType(.decimalPad)
-#endif
+    #endif
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
@@ -380,7 +351,7 @@ struct AddEntryView: View {
                             .foregroundColor(Color(red: 0.3, green: 0.4, blue: 0.6))
                         
                         Button(action: {
-                            // Non-functional as requested
+                            // Transaction logic here
                         }) {
                             Text("Add Entry")
                                 .font(.body)
@@ -437,54 +408,148 @@ struct AddEntryView: View {
             .padding(.horizontal, 32)
         }
     }
+    
+    private var statusIndicators: some View {
+        Group {
+            if firebaseManager.isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text("Loading customers...")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+            }
+            
+            if !firebaseManager.isConnected {
+                HStack {
+                    Image(systemName: "wifi.slash")
+                        .font(.body)
+                        .foregroundColor(.red)
+                    Text("No internet connection")
+                        .font(.body)
+                        .foregroundColor(.red)
+                    
+                    Button("Retry") {
+                        firebaseManager.retryConnection()
+                    }
+                    .font(.body)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+                .padding()
+                .background(Color.red.opacity(0.1))
+                .cornerRadius(12)
+                .padding(.horizontal, 32)
+            }
+            
+            if !firebaseManager.errorMessage.isEmpty {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.body)
+                        .foregroundColor(.orange)
+                    Text(firebaseManager.errorMessage)
+                        .font(.body)
+                        .foregroundColor(.orange)
+                    
+                    Button("Retry") {
+                        firebaseManager.retryConnection()
+                    }
+                    .font(.body)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Color.orange)
+                    .foregroundColor(.white)
+                    .cornerRadius(8)
+                }
+                .padding()
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(12)
+                .padding(.horizontal, 32)
+            }
+            
+            HStack {
+                Image(systemName: firebaseManager.isConnected ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.body)
+                    .foregroundColor(firebaseManager.isConnected ? .green : .red)
+                Text("Found \(firebaseManager.customers.count) customers")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                
+                if firebaseManager.isConnected {
+                    Text("• Connected")
+                        .font(.body)
+                        .foregroundColor(.green)
+                }
+            }
+            .padding(.horizontal, 32)
+        }
+    }
 }
 
-// Simple dropdown button that just opens overlay
 struct SimpleDropdownButton: View {
     let selectedCustomer: Customer?
     let placeholder: String
     @Binding var isOpen: Bool
     @Binding var buttonFrame: CGRect
+    @Binding var searchText: String
+    @FocusState.Binding var isFocused: Bool
     
     var body: some View {
-        Button(action: {
+        HStack(spacing: 12) {
+            ZStack(alignment: .leading) {
+                if isOpen {
+                    TextField("Search...", text: $searchText)
+                        .font(.body)
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .foregroundColor(.primary)
+                        .focused($isFocused)
+                        .onAppear {
+                            DispatchQueue.main.async {
+                                isFocused = true
+                            }
+                        }
+                } else {
+                    if let selectedCustomer = selectedCustomer {
+                        Text(selectedCustomer.displayNameWithTag)
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                    } else {
+                        Text(placeholder)
+                            .font(.body)
+                            .foregroundColor(.primary.opacity(0.6))
+                    }
+                }
+            }
+            Spacer()
+            Image(systemName: isOpen ? "chevron.up" : "chevron.down")
+                .font(.body)
+                .fontWeight(.medium)
+                .foregroundColor(.blue)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white)
+                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isOpen ? Color.blue.opacity(0.6) : Color.gray.opacity(0.3), lineWidth: isOpen ? 2 : 1)
+        )
+        .onTapGesture {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isOpen.toggle()
+                isFocused = isOpen
             }
-        }) {
-            HStack(spacing: 12) {
-                if let selectedCustomer = selectedCustomer {
-                    Text(selectedCustomer.displayNameWithTag)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
-                } else {
-                    Text(placeholder)
-                        .font(.body)
-                        .foregroundColor(.primary.opacity(0.6))
-                }
-                
-                Spacer()
-                
-                Image(systemName: isOpen ? "chevron.up" : "chevron.down")
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundColor(.blue)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.white)
-                    .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isOpen ? Color.blue.opacity(0.6) : Color.gray.opacity(0.3), lineWidth: isOpen ? 2 : 1)
-            )
         }
-        .buttonStyle(PlainButtonStyle())
         .background(
             GeometryReader { geometry in
                 Color.clear
@@ -499,106 +564,14 @@ struct SimpleDropdownButton: View {
     }
 }
 
-// Global dropdown overlay that appears above everything
+// Overlay only shows customers, no search bar shown here!
 struct CustomerDropdownOverlay: View {
     @Binding var isOpen: Bool
     @Binding var selectedCustomer: Customer?
     let customers: [Customer]
     let buttonFrame: CGRect
     
-    @State private var searchText: String = ""
-    
-    private var filteredCustomers: [Customer] {
-        guard !searchText.isEmpty else { return customers }
-        return customers.filter { $0.name.localizedCaseInsensitiveContains(searchText) }
-    }
-    
-    private var dropdownContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            searchField
-            Divider()
-            customerList
-        }
-        .frame(width: 250)
-        .background(Color.white)
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.2), radius: 15, x: 0, y: 6)
-    }
-    
-    private var searchField: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .foregroundColor(.secondary)
-                .font(.body)
-            
-            TextField("Search...", text: $searchText)
-                .font(.body)
-                .textFieldStyle(PlainTextFieldStyle())
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color.gray.opacity(0.05))
-    }
-    
-    private var customerList: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(filteredCustomers) { customer in
-                    customerRow(customer: customer)
-                }
-            }
-        }
-        .frame(height: min(CGFloat(filteredCustomers.count) * 60, 240))
-    }
-    
-    private func customerRow(customer: Customer) -> some View {
-        Button(action: {
-            withAnimation {
-                selectedCustomer = customer
-                isOpen = false
-            }
-        }) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(customer.name)
-                            .font(.body)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                        
-                        Text("[\(customer.type.shortTag)]")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(
-                                RoundedRectangle(cornerRadius: 4)
-                                    .fill(customer.type == .customer ? Color.blue :
-                                          customer.type == .middleman ? Color.orange : Color.green)
-                            )
-                    }
-                    
-                    Text("$\(customer.balance, specifier: "%.2f")")
-                        .font(.callout)
-                        .foregroundColor(customer.balance >= 0 ? .green : .red)
-                }
-                
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(
-                selectedCustomer?.id == customer.id ?
-                Color.blue.opacity(0.1) : Color.clear
-            )
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-    
     var body: some View {
-        // Full screen background to catch taps outside
         Color.black.opacity(0.001)
             .edgesIgnoringSafeArea(.all)
             .onTapGesture {
@@ -607,11 +580,64 @@ struct CustomerDropdownOverlay: View {
                 }
             }
             .overlay(
-                dropdownContent
-                    .position(
-                        x: buttonFrame.midX,
-                        y: buttonFrame.maxY + 15 + (min(CGFloat(filteredCustomers.count) * 60, 240) / 2)
-                    )
+                VStack(alignment: .leading, spacing: 0) {
+                    ScrollView {
+                        VStack(spacing: 0) {
+                            ForEach(customers) { customer in
+                                Button(action: {
+                                    withAnimation {
+                                        selectedCustomer = customer
+                                        isOpen = false
+                                    }
+                                }) {
+                                    HStack(spacing: 12) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(customer.name)
+                                                .font(.body)
+                                                .fontWeight(.medium)
+                                                .foregroundColor(.primary)
+                                            Text("$\(customer.balance, specifier: "%.2f")")
+                                                .font(.callout)
+                                                .foregroundColor(customer.balance >= 0 ? .green : .red)
+                                        }
+                                        Spacer()
+                                        Text("[\(customer.type.displayName)]")
+                                            .font(.caption2)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.white)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(
+                                                RoundedRectangle(cornerRadius: 4)
+                                                    .fill(customer.type == .customer ? Color.blue :
+                                                        customer.type == .middleman ? Color.orange : Color.green)
+                                            )
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 12)
+                                    .background(
+                                        selectedCustomer?.id == customer.id ?
+                                        Color.blue.opacity(0.1) : Color.clear
+                                    )
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .frame(height: min(CGFloat(customers.count) * 60, 240))
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(Color.white)
+                        .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 6)
+                )
+                .frame(width: max(350, buttonFrame.width))
+                .position(
+                    x: buttonFrame.midX,
+                    y: buttonFrame.maxY + 15 + (min(CGFloat(customers.count) * 60, 240) / 2)
+                )
             )
     }
 }

@@ -257,6 +257,26 @@ class FirebaseManager: ObservableObject {
         print("✅ \(customer.type.rawValue) added successfully")
     }
     
+    // Add to FirebaseManager.swift
+    func addCustomerToFirestore(_ customer: Customer, completion: @escaping (Bool) -> Void) {
+        let db = Firestore.firestore()
+        let docRef = db.collection("Customers").document()
+        var data = customer.toDictionary()
+        data["name"] = customer.name
+        data["phone"] = customer.phone
+        data["email"] = customer.email
+        data["address"] = customer.address
+        data["notes"] = customer.notes
+        data["balance"] = 0.0
+        data["createdAt"] = Timestamp()
+        data["updatedAt"] = Timestamp()
+        // If you want transactionHistory, add it here as well
+        
+        docRef.setData(data) { error in
+            completion(error == nil)
+        }
+    }
+    
     func retryConnection() {
         print("🔄 Retrying connection...")
         fetchAllCustomers()
@@ -266,5 +286,14 @@ class FirebaseManager: ObservableObject {
         customersListener?.remove()
         middlemenListener?.remove()
         suppliersListener?.remove()
+    }
+}
+
+extension FirebaseManager {
+    func addCustomerToFirestore(customerId: String, data: [String: Any], completion: @escaping (Bool) -> Void) {
+        let db = Firestore.firestore()
+        db.collection("Customers").document(customerId).setData(data) { error in
+            completion(error == nil)
+        }
     }
 }

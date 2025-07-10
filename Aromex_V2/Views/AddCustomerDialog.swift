@@ -1,170 +1,221 @@
 import SwiftUI
+import FirebaseFirestore
 
 struct AddCustomerDialog: View {
-    @Environment(\.presentationMode) var presentationMode
     @EnvironmentObject var firebaseManager: FirebaseManager
+    @Environment(\.presentationMode) var presentationMode
     
-    @State private var customerName: String = ""
-    @State private var customerPhone: String = ""
-    @State private var customerEmail: String = ""
-    @State private var customerAddress: String = ""
-    @State private var customerNotes: String = ""
-    @State private var isLoading: Bool = false
-    @State private var showingAlert: Bool = false
-    @State private var alertMessage: String = ""
+    @State private var name: String = ""
+    @State private var phone: String = ""
+    @State private var email: String = ""
+    @State private var address: String = ""
+    @State private var notes: String = ""
+    @State private var nameError: String = ""
+    @State private var isAdding: Bool = false
+    
+    // Theme colors
+    let mainColor = Color(red: 0.23, green: 0.28, blue: 0.42)
+    let sectionBg = Color.white
+    let fieldCornerRadius: CGFloat = 10
+    let fieldHeight: CGFloat = 50
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Customer Information")
-                        .font(.headline)
-                        .padding(.top)
+        VStack(alignment: .leading, spacing: 0) {
+            // Title
+            Text("Add Customer")
+                .font(.system(size: 34, weight: .bold, design: .serif))
+                .foregroundColor(mainColor)
+                .padding(.top, 28)
+                .padding(.leading, 48)
+                .padding(.bottom, 20)
+            
+            VStack(spacing: 24) {
+                // Name, Phone, Email in a single row
+                HStack(spacing: 20) {
+                    // Name Field
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 2) {
+                            Text("Name")
+                                .font(.system(size: 17, weight: .semibold, design: .serif))
+                                .foregroundColor(mainColor)
+                            Text("*")
+                                .foregroundColor(.red)
+                        }
+                        TextField("Enter customer name", text: $name)
+                            .font(.system(size: 18, weight: .medium, design: .default))
+                            .padding(.horizontal, 16)
+                            .frame(height: fieldHeight)
+                            .background(sectionBg)
+                            .cornerRadius(fieldCornerRadius)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: fieldCornerRadius)
+                                    .stroke(nameError.isEmpty ? Color.gray.opacity(0.15) : Color.red, lineWidth: 1.2)
+                            )
+                        if !nameError.isEmpty {
+                            Text(nameError)
+                                .font(.system(size: 13, weight: .regular))
+                                .foregroundColor(.red)
+                                .padding(.top, 1)
+                        }
+                    }
                     
-                    VStack(alignment: .leading, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Customer Name *")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField("Enter customer name", text: $customerName)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Phone Number")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField("Enter phone number", text: $customerPhone)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                #if os(iOS)
-                                .keyboardType(.phonePad)
-                                #endif
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Email Address")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField("Enter email address", text: $customerEmail)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                #if os(iOS)
-                                .keyboardType(.emailAddress)
-                                .autocapitalization(.none)
-                                #endif
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Address")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField("Enter address", text: $customerAddress)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Notes (Optional)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField("Enter any notes", text: $customerNotes, axis: .vertical)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .lineLimit(3...6)
-                        }
+                    // Phone Field
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Phone")
+                            .font(.system(size: 17, weight: .semibold, design: .serif))
+                            .foregroundColor(mainColor)
+                        TextField("Enter customer phone", text: $phone)
+                            .font(.system(size: 18, weight: .medium, design: .default))
+                            .padding(.horizontal, 16)
+                            .frame(height: fieldHeight)
+                            .background(sectionBg)
+                            .cornerRadius(fieldCornerRadius)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: fieldCornerRadius)
+                                    .stroke(Color.gray.opacity(0.15), lineWidth: 1.2)
+                            )
+                    }
+                    
+                    // Email Field
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Email")
+                            .font(.system(size: 17, weight: .semibold, design: .serif))
+                            .foregroundColor(mainColor)
+                        TextField("Enter customer email", text: $email)
+                            .font(.system(size: 18, weight: .medium, design: .default))
+                            .padding(.horizontal, 16)
+                            .frame(height: fieldHeight)
+                            .background(sectionBg)
+                            .cornerRadius(fieldCornerRadius)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: fieldCornerRadius)
+                                    .stroke(Color.gray.opacity(0.15), lineWidth: 1.2)
+                            )
                     }
                 }
-                .padding(.horizontal)
+                .frame(maxWidth: .infinity)
                 
+                // Address Field
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Address")
+                        .font(.system(size: 17, weight: .semibold, design: .serif))
+                        .foregroundColor(mainColor)
+                    TextField("Enter customer address", text: $address)
+                        .font(.system(size: 18, weight: .medium, design: .default))
+                        .padding(.horizontal, 16)
+                        .frame(height: fieldHeight)
+                        .background(sectionBg)
+                        .cornerRadius(fieldCornerRadius)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: fieldCornerRadius)
+                                .stroke(Color.gray.opacity(0.15), lineWidth: 1.2)
+                        )
+                }
+                
+                // Notes Field
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Notes")
+                        .font(.system(size: 17, weight: .semibold, design: .serif))
+                        .foregroundColor(mainColor)
+                    TextField("Enter customer notes", text: $notes)
+                        .font(.system(size: 18, weight: .medium, design: .default))
+                        .padding(.horizontal, 16)
+                        .frame(height: fieldHeight)
+                        .background(sectionBg)
+                        .cornerRadius(fieldCornerRadius)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: fieldCornerRadius)
+                                .stroke(Color.gray.opacity(0.15), lineWidth: 1.2)
+                        )
+                }
+            }
+            .padding(.horizontal, 48)
+            
+            // Action Buttons
+            HStack(spacing: 20) {
                 Spacer()
-            }
-            .navigationTitle("Add New Customer")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                }
                 
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveCustomer()
-                    }
-                    .disabled(customerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+                // Cancel Button
+                Button(action: { presentationMode.wrappedValue.dismiss() }) {
+                    Text("Cancel")
+                        .font(.system(size: 18, weight: .semibold, design: .serif))
+                        .frame(width: 130, height: 45)
+                        .background(mainColor.opacity(0.93))
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
+                        .opacity(isAdding ? 0.6 : 1)
                 }
-            }
-            #else
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        presentationMode.wrappedValue.dismiss()
-                    }
-                }
+                .buttonStyle(PlainButtonStyle())
+                .disabled(isAdding)
                 
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        saveCustomer()
-                    }
-                    .disabled(customerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isLoading)
+                // Add Customer Button
+                Button(action: addCustomer) {
+                    Text("Add Customer")
+                        .font(.system(size: 18, weight: .semibold, design: .serif))
+                        .frame(width: 180, height: 45)
+                        .background((name.trimmingCharacters(in: .whitespaces).isEmpty || isAdding) ?
+                                    Color.gray.opacity(0.22) : mainColor.opacity(0.97))
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
                 }
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isAdding)
+                .buttonStyle(PlainButtonStyle())
             }
-            #endif
+            .padding(.top, 28)
+            .padding(.horizontal, 48)
+            .padding(.bottom, 32)
         }
-        .alert("Customer", isPresented: $showingAlert) {
-            Button("OK") { }
-        } message: {
-            Text(alertMessage)
-        }
-        .disabled(isLoading)
-        .overlay(
-            Group {
-                if isLoading {
-                    ProgressView("Saving...")
-                        .padding()
-                        .background(Color.black.opacity(0.1))
-                        .cornerRadius(8)
-                }
-            }
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(sectionBg)
+                .shadow(color: .black.opacity(0.13), radius: 36, x: 0, y: 12)
         )
+        .frame(width: 900, height: 500)
     }
     
-    private func saveCustomer() {
-        guard !customerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            alertMessage = "Customer name is required"
-            showingAlert = true
+    private func addCustomer() {
+        nameError = ""
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        
+        // Validate name
+        guard !trimmedName.isEmpty else {
+            nameError = "Name is required."
             return
         }
         
-        isLoading = true
+        // Check for duplicate
+        if firebaseManager.customers.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) {
+            nameError = "A customer with this name already exists."
+            return
+        }
         
-        let newCustomer = Customer(
-            name: customerName.trimmingCharacters(in: .whitespacesAndNewlines),
-            phone: customerPhone.trimmingCharacters(in: .whitespacesAndNewlines),
-            email: customerEmail.trimmingCharacters(in: .whitespacesAndNewlines),
-            address: customerAddress.trimmingCharacters(in: .whitespacesAndNewlines),
-            notes: customerNotes.trimmingCharacters(in: .whitespacesAndNewlines),
-            balance: 0.0
-        )
+        isAdding = true
         
-        Task {
-            do {
-                try await firebaseManager.addCustomer(newCustomer)
-                
-                await MainActor.run {
-                    isLoading = false
-                    presentationMode.wrappedValue.dismiss()
-                }
-            } catch {
-                await MainActor.run {
-                    isLoading = false
-                    alertMessage = "Failed to save customer: \(error.localizedDescription)"
-                    showingAlert = true
-                }
+        // Prepare Firestore data
+        let customerId = UUID().uuidString
+        let now = Date()
+        let timestamp = Timestamp(date: now)
+        
+        let customerData: [String: Any] = [
+            "name": trimmedName,
+            "phone": phone.trimmingCharacters(in: .whitespaces),
+            "email": email.trimmingCharacters(in: .whitespaces),
+            "address": address.trimmingCharacters(in: .whitespaces),
+            "notes": notes.trimmingCharacters(in: .whitespaces),
+            "balance": 0.0,
+            "createdAt": timestamp,
+            "updatedAt": timestamp,
+            "transactionHistory": []
+        ]
+        
+        // Add to Firestore
+        firebaseManager.addCustomerToFirestore(customerId: customerId, data: customerData) { success in
+            isAdding = false
+            if success {
+                presentationMode.wrappedValue.dismiss()
+            } else {
+                nameError = "Failed to add customer. Try again."
             }
         }
     }
-}
-
-#Preview {
-    AddCustomerDialog()
-        .environmentObject(FirebaseManager.shared)
 }
