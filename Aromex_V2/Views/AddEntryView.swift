@@ -307,6 +307,7 @@ struct AddEntryView: View {
                         // All Transactions Section
                         allTransactionsSection
                         
+                        
                         // Status indicators
                         statusIndicators
                         
@@ -578,6 +579,7 @@ struct AddEntryView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(transactionManager.transactions) { transaction in
                             TransactionRowView(transaction: transaction)
+                                .frame(maxWidth: .infinity)
                         }
                     }
                 }
@@ -1689,7 +1691,7 @@ struct TransactionRowView: View {
     
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
-        formatter.dateStyle = .medium
+        formatter.dateStyle = .short
         formatter.timeStyle = .short
         return formatter
     }
@@ -1711,257 +1713,271 @@ struct TransactionRowView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Title Row: Amounts, Exchange, Date
-            HStack(alignment: .center, spacing: 0) {
-                // Amount/Exchange Section
+        VStack(alignment: .leading, spacing: 4) {
+            // Header Row
+            HStack(spacing: 0) {
+                Text("Date & Time")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                    .frame(width: 120, alignment: .leading)
+                    .padding(.horizontal, 12)
+                
+                Divider().frame(height: 20)
+                
+                Text("Transaction Details")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                    .frame(width: 280, alignment: .leading)
+                    .padding(.horizontal, 12)
+                
+                Divider().frame(height: 20)
+                
+                Text("Exchange Info")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                    .frame(width: 160, alignment: .leading)
+                    .padding(.horizontal, 12)
+                
+                Divider().frame(height: 20)
+                
+                Text("Giver Balances")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                    .frame(width: 140, alignment: .leading)
+                    .padding(.horizontal, 12)
+                
+                Divider().frame(height: 20)
+                
+                Text("Taker Balances")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                    .frame(width: 140, alignment: .leading)
+                    .padding(.horizontal, 12)
+            }
+            .padding(.vertical, 4)
+            .background(Color.gray.opacity(0.05))
+            .cornerRadius(8)
+
+            // Actual Transaction Row
+            HStack(spacing: 0) {
+                // COLUMN 1: Date & Time
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 10) {
-                        Text("\(transaction.amount, specifier: "%.2f") \(transaction.currencyName)")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                    Text(dateFormatter.string(from: transaction.timestamp.dateValue()))
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(width: 120, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 16)
+                
+                Divider().frame(height: 80)
+                
+                // COLUMN 2: Amount & Transaction Details
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text("\(transaction.amount, specifier: "%.2f") \(transaction.currencyGiven)")
+                            .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.primary)
-                            .lineLimit(1)
-                        
-                        // Only use right arrow, even for exchange
-                        Image(systemName: "arrow.right")
-                            .font(.title3)
-                            .foregroundColor(.blue)
                         
                         if transaction.isExchange {
-                            Text("\(transaction.receivedAmount ?? 0, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
-                                .font(.title2)
-                                .fontWeight(.bold)
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.blue)
+                            
+                            Text("\(transaction.receivedAmount ?? 0, specifier: "%.2f") \(transaction.receivingCurrency ?? "")")
+                                .font(.system(size: 16, weight: .bold))
                                 .foregroundColor(.green)
-                                .lineLimit(1)
                         }
                     }
                     
-                    if transaction.isExchange {
-                        HStack(spacing: 6) {
-                            Text("Exchange")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Text("\(transaction.currencyName) → \(transaction.receivingCurrencyName ?? "")")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            if let profit = transaction.profitAmount, profit > 0 {
-                                Text("(+\(profit, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "") profit)")
-                                    .font(.caption)
-                                    .foregroundColor(.green)
-                                    .fontWeight(.medium)
-                            }
-                        }
-                    } else {
-                        Text(transaction.currencyName)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    if transaction.isExchange, let customRate = transaction.customExchangeRate {
+                        Text("Rate: 1 \(transaction.currencyName) = \(customRate, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.blue)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.blue.opacity(0.1))
+                            .cornerRadius(6)
                     }
-                }
-                .frame(width: 270, alignment: .leading)
-                
-                Divider().frame(height: 60).padding(.horizontal, 8)
-                
-                // Parties
-                VStack(spacing: 8) {
-                    HStack(spacing: 10) {
+                    
+                    HStack(spacing: 8) {
                         HStack(spacing: 4) {
                             if transaction.giver == "myself_special_id" {
                                 Image(systemName: "person.crop.circle.fill")
+                                    .font(.system(size: 12))
                                     .foregroundColor(.blue)
                             }
                             Text(transaction.giverName)
-                                .fontWeight(.medium)
+                                .font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(transaction.giver == "myself_special_id" ? .blue : .primary)
                         }
-                        Image(systemName: "arrow.right") // Always right arrow
-                            .foregroundColor(.blue)
+                        
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.gray)
+                        
                         HStack(spacing: 4) {
                             if transaction.taker == "myself_special_id" {
                                 Image(systemName: "person.crop.circle.fill")
+                                    .font(.system(size: 12))
                                     .foregroundColor(.blue)
                             }
                             Text(transaction.takerName)
-                                .fontWeight(.medium)
+                                .font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(transaction.taker == "myself_special_id" ? .blue : .primary)
                         }
                     }
-                    .font(.body)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.gray.opacity(0.08))
+                    .cornerRadius(8)
                 }
-                .frame(width: 340, alignment: .center)
+                .frame(width: 280, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 16)
                 
-                Divider().frame(height: 60).padding(.horizontal, 8)
+                Divider().frame(height: 80)
                 
-                // Date
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(dateFormatter.string(from: transaction.timestamp.dateValue()))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                .frame(width: 140, alignment: .trailing)
-            }
-            .padding(.vertical, 18)
-            .padding(.horizontal, 22)
-            .background(Color.systemGray6)
-            
-            Divider()
-            
-            // Exchange Rate Table Row (if exchange)
-            if transaction.isExchange,
-               let customRate = transaction.customExchangeRate,
-               let marketRate = transaction.marketExchangeRate {
-                HStack(spacing: 0) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Exchange Rate")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("1 \(transaction.currencyName) = \(customRate, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(.primary)
-                    }
-                    .frame(width: 270, alignment: .leading)
-                    
-                    Divider().frame(height: 34).padding(.horizontal, 8)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Market Rate")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("1 \(transaction.currencyName) = \(marketRate, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(width: 340, alignment: .leading)
-                    
-                    Divider().frame(height: 34).padding(.horizontal, 8)
-                    
-                    VStack(alignment: .trailing, spacing: 2) {
-                        if let profit = transaction.profitAmount, profit > 0 {
-                            Text("Profit Made:")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                            Text("+\(profit, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .foregroundColor(.green)
+                // COLUMN 3: Market Rate, Exchange Rate & Profit (only for exchanges)
+                VStack(alignment: .leading, spacing: 6) {
+                    if transaction.isExchange {
+                        if let marketRate = transaction.marketExchangeRate {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Market Rate")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.secondary)
+                                Text("1 \(transaction.currencyName) = \(marketRate, specifier: "%.4f")")
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
                         }
+                        
+                        if let customRate = transaction.customExchangeRate {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Your Rate")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.blue)
+                                Text("1 \(transaction.currencyName) = \(customRate, specifier: "%.4f")")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.blue)
+                            }
+                        }
+                        
+                        if let profit = transaction.profitAmount, profit > 0 {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Profit")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.green)
+                                Text("+\(profit, specifier: "%.2f") \(transaction.profitCurrency ?? "")")
+                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.green)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(6)
+                        }
+                    } else {
+                        Text("Regular Transfer")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .italic()
                     }
-                    .frame(width: 140, alignment: .trailing)
                 }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 22)
-                .background(Color.blue.opacity(0.04))
-                Divider()
-            }
-            
-            // Balances Table Row
-            HStack(spacing: 0) {
-                // Giver balances
-                VStack(alignment: .leading, spacing: 4) {
+                .frame(width: 160, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 16)
+                
+                Divider().frame(height: 80)
+                
+                // COLUMN 4: Giver Balances
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 4) {
                         if transaction.giver == "myself_special_id" {
                             Image(systemName: "person.crop.circle.fill")
-                                .font(.caption2)
+                                .font(.system(size: 10))
                                 .foregroundColor(.blue)
                         }
                         Text(transaction.giverName)
-                            .font(.caption)
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(transaction.giver == "myself_special_id" ? .blue : .secondary)
-                            .fontWeight(.medium)
+                            .lineLimit(1)
                     }
+                    
                     ForEach(Array(giverBalances.keys.sorted()), id: \.self) { currencyKey in
                         if let balance = giverBalances[currencyKey] {
                             let roundedBalance = round(balance * 100) / 100
-                            HStack(spacing: 4) {
-                                Text(currencyKey == "amount" ? "CAD" : currencyKey)
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Text("\(roundedBalance, specifier: "%.2f")")
-                                    .font(.caption)
-                                    .foregroundColor(abs(roundedBalance) < 0.01 ? .gray : (roundedBalance > 0 ? .green : .red))
-                                    .fontWeight(.medium)
+                            if abs(roundedBalance) >= 0.01 || currencyKey == "amount" || currencyKey == "CAD" {
+                                HStack(spacing: 4) {
+                                    Text(currencyKey == "amount" ? "CAD" : currencyKey)
+                                        .font(.system(size: 9, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                    Text("\(roundedBalance, specifier: "%.2f")")
+                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                        .foregroundColor(abs(roundedBalance) < 0.01 ? .gray : (roundedBalance > 0 ? .green : .red))
+                                }
                             }
                         }
                     }
                 }
-                .frame(width: 270, alignment: .leading)
+                .frame(width: 140, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 16)
                 
-                Divider().frame(height: 52).padding(.horizontal, 8)
+                Divider().frame(height: 80)
                 
-                // Taker balances
-                VStack(alignment: .leading, spacing: 4) {
+                // COLUMN 5: Taker Balances
+                VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 4) {
                         if transaction.taker == "myself_special_id" {
                             Image(systemName: "person.crop.circle.fill")
-                                .font(.caption2)
+                                .font(.system(size: 10))
                                 .foregroundColor(.blue)
                         }
                         Text(transaction.takerName)
-                            .font(.caption)
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(transaction.taker == "myself_special_id" ? .blue : .secondary)
-                            .fontWeight(.medium)
+                            .lineLimit(1)
                     }
+                    
                     ForEach(Array(takerBalances.keys.sorted()), id: \.self) { currencyKey in
                         if let balance = takerBalances[currencyKey] {
                             let roundedBalance = round(balance * 100) / 100
-                            HStack(spacing: 4) {
-                                Text(currencyKey == "amount" ? "CAD" : currencyKey)
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                                Text("\(roundedBalance, specifier: "%.2f")")
-                                    .font(.caption)
-                                    .foregroundColor(abs(roundedBalance) < 0.01 ? .gray : (roundedBalance > 0 ? .green : .red))
-                                    .fontWeight(.medium)
+                            if abs(roundedBalance) >= 0.01 || currencyKey == "amount" || currencyKey == "CAD" {
+                                HStack(spacing: 4) {
+                                    Text(currencyKey == "amount" ? "CAD" : currencyKey)
+                                        .font(.system(size: 9, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                    Text("\(roundedBalance, specifier: "%.2f")")
+                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                        .foregroundColor(abs(roundedBalance) < 0.01 ? .gray : (roundedBalance > 0 ? .green : .red))
+                                }
                             }
                         }
                     }
                 }
-                .frame(width: 340, alignment: .leading)
-                
-                Divider().frame(height: 52).padding(.horizontal, 8)
-                
-                // Label for symmetry (can be changed or left empty)
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("Balances")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                }
-                .frame(width: 140, alignment: .trailing)
+                .frame(width: 140, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 16)
             }
-            .padding(.vertical, 10)
-            .padding(.horizontal, 22)
-            .background(Color.systemGray6)
-            
-            Divider()
-            
-            // Notes Row, if any
-            if !transaction.notes.isEmpty {
-                HStack(alignment: .top) {
-                    Text("Notes:")
-                        .font(.caption)
-                        .fontWeight(.medium)
-                        .foregroundColor(.secondary)
-                        .frame(width: 80, alignment: .leading)
-                    Text(transaction.notes)
-                        .font(.callout)
-                        .foregroundColor(.primary)
-                    Spacer()
-                }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 22)
-            }
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.systemBackground)
+                    .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 1)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.gray.opacity(0.15), lineWidth: 1)
+            )
+            .padding(.vertical, 4)
+            .padding(.horizontal, 2)
         }
-        .background(
-            RoundedRectangle(cornerRadius: 14)
-                .fill(Color.systemBackground)
-                .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.gray.opacity(0.13), lineWidth: 1)
-        )
-        .padding(.vertical, 8)
-        .padding(.horizontal, 2)
     }
 }
