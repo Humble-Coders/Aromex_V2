@@ -477,6 +477,53 @@ struct AddEntryView: View {
         .frame(height: shouldUseVerticalLayout ? 120 : 100)
     }
     
+    // ADDED: Missing transactionSection
+    private var transactionSection: some View {
+        VStack(spacing: 40) {
+            // Section Header
+            HStack {
+                HStack(spacing: 16) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(shouldUseVerticalLayout ? .title2 : .title)
+                        .foregroundColor(.gray)
+                    
+                    Text("New Transaction")
+                        .font(shouldUseVerticalLayout ? .title2 : .title)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                }
+                
+                Spacer()
+                
+                HStack(spacing: 16) {
+                    Text("Exchange")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                    
+                    Toggle("", isOn: $isExchangeOn)
+                        .toggleStyle(SwitchToggleStyle(tint: .blue))
+                        .scaleEffect(shouldUseVerticalLayout ? 1.0 : 1.2)
+                        .labelsHidden()
+                }
+            }
+            .padding(.horizontal, horizontalPadding)
+            
+            // Transaction Form
+            VStack(spacing: 32) {
+                if shouldUseVerticalLayout {
+                    verticalTransactionForm
+                } else {
+                    horizontalTransactionForm
+                }
+            }
+            .padding(.vertical, 32)
+            .background(Color.white)
+            .cornerRadius(16)
+            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
+            .padding(.horizontal, horizontalPadding)
+        }
+    }
+    
     private var allTransactionsSection: some View {
         VStack(spacing: 24) {
             // Section Header
@@ -538,63 +585,158 @@ struct AddEntryView: View {
             .padding(.horizontal, horizontalPadding)
         }
     }
-    
-    private var transactionSection: some View {
-        VStack(spacing: 40) {
-            // Section Header
-            HStack {
-                HStack(spacing: 16) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(shouldUseVerticalLayout ? .title2 : .title)
-                        .foregroundColor(.gray)
-                    
-                    Text("New Transaction")
-                        .font(shouldUseVerticalLayout ? .title2 : .title)
-                        .fontWeight(.semibold)
+
+    private var horizontalTransactionForm: some View {
+        VStack(spacing: 32) {
+            // Main Transaction Row - Everything in One Line - CENTERED
+            HStack(alignment: .top, spacing: 20) {
+                Spacer() // Left spacer to center content
+                
+                // FROM Section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("From")
+                        .font(.system(size: 14, weight: .semibold))
                         .foregroundColor(.primary)
-                }
-                
-                Spacer()
-                
-                HStack(spacing: 16) {
-                    Text("Exchange")
-                        .font(.body)
-                        .foregroundColor(.secondary)
                     
-                    Toggle("", isOn: $isExchangeOn)
-                        .toggleStyle(SwitchToggleStyle(tint: .blue))
-                        .scaleEffect(shouldUseVerticalLayout ? 1.0 : 1.2)
-                        .labelsHidden()
-                }
-            }
-            .padding(.horizontal, horizontalPadding)
-            
-            // Transaction Form
-            VStack(spacing: 32) {
-                if shouldUseVerticalLayout {
-                    verticalTransactionForm
-                } else {
-                    horizontalTransactionForm
+                    SimpleDropdownButton(
+                        selectedCustomer: selectedFromCustomer,
+                        placeholder: "Select customer",
+                        isOpen: $selectedFromDropdownOpen,
+                        buttonFrame: $fromButtonFrame,
+                        searchText: $fromSearchText,
+                        isFocused: $isFromFieldFocused
+                    )
+                    .frame(width: 180, height: 44)
                 }
                 
-                // Notes Section
-                notesSection
+                // Arrow Connector
+                VStack(spacing: 4) {
+                    Spacer().frame(height: 18) // Align with dropdowns
+                    HStack(spacing: 4) {
+                        Text("gives to")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.blue)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.blue)
+                    }
+                    .frame(height: 44)
+                    .padding(.horizontal, 8)
+                    .background(Color.blue.opacity(0.05))
+                    .cornerRadius(8)
+                }
+                .frame(width: 100)
+                
+                // TO Section
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("To")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    SimpleDropdownButton(
+                        selectedCustomer: selectedToCustomer,
+                        placeholder: "Select customer",
+                        isOpen: $selectedToDropdownOpen,
+                        buttonFrame: $toButtonFrame,
+                        searchText: $toSearchText,
+                        isFocused: $isToFieldFocused
+                    )
+                    .frame(width: 180, height: 44)
+                }
+                
+                // AMOUNT Section (Combined Currency + Amount)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Amount")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    combinedAmountCurrencyField
+                        .frame(width: 200, height: 44)
+                }
+                
+                // EXCHANGE RATE Section (only if exchange is on)
+                if isExchangeOn {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Exchange Rate")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        exchangeRateCompactField
+                            .frame(width: 220, height: 44)
+                    }
+                }
+                
+                // ACTION BUTTONS
+                HStack(spacing: 12) {
+                    // Add Customer Button
+                    VStack(spacing: 4) {
+                        Spacer().frame(height: 18) // Align with other elements
+                        Button(action: { showingAddCustomerDialog = true }) {
+                            Image(systemName: "person.badge.plus")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Color.blue)
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    
+                    // Add Transaction Button
+                    VStack(spacing: 4) {
+                        Spacer().frame(height: 18) // Align with other elements
+                        Button(action: { addTransaction() }) {
+                            Text(isProcessingTransaction ? "⏳" : "Add")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 60, height: 44)
+                                .background(
+                                    isTransactionValid && !isProcessingTransaction ?
+                                    Color(red: 0.3, green: 0.4, blue: 0.6) : Color.gray.opacity(0.5)
+                                )
+                                .cornerRadius(8)
+                        }
+                        .disabled(!isTransactionValid || isProcessingTransaction)
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                
+                Spacer() // Right spacer to center content
             }
-            .padding(.vertical, 32)
-            .background(Color.white)
-            .cornerRadius(16)
-            .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
-            .padding(.horizontal, horizontalPadding)
+            
+            // Customer Balances Row (shown below main row when customers are selected) - CENTERED
+            if selectedFromCustomer != nil || selectedToCustomer != nil {
+                HStack {
+                    Spacer()
+                    customerBalancesRow
+                    Spacer()
+                }
+            }
+            
+            // Exchange Details Row (shown below when exchange is on and values are entered) - CENTERED
+            if isExchangeOn && shouldShowExchangeDetails {
+                HStack {
+                    Spacer()
+                    exchangeDetailsRow
+                    Spacer()
+                }
+            }
+            
+            // Notes Row - CENTERED
+            HStack {
+                Spacer()
+                notesRow
+                Spacer()
+            }
         }
     }
-    
+
     private var verticalTransactionForm: some View {
         VStack(spacing: 24) {
-            // From Customer
-            VStack(alignment: .leading, spacing: 8) {
+            // FROM Section
+            VStack(alignment: .leading, spacing: 12) {
                 Text("From")
-                    .font(.body)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.primary)
                 
                 SimpleDropdownButton(
@@ -606,31 +748,32 @@ struct AddEntryView: View {
                     isFocused: $isFromFieldFocused
                 )
                 .frame(height: 50)
+                
+                // Show balance immediately below
+                if let customer = selectedFromCustomer {
+                    compactCustomerBalance(for: customer)
+                }
             }
             .padding(.horizontal, 20)
             
-            // Arrow Indicator
+            // Arrow
             HStack {
                 Spacer()
                 VStack(spacing: 4) {
                     Text("gives to")
-                        .font(.callout)
-                        .fontWeight(.medium)
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.blue)
-                    
                     Image(systemName: "arrow.down")
-                        .font(.title2)
-                        .fontWeight(.medium)
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.blue)
                 }
                 Spacer()
             }
             
-            // To Customer
-            VStack(alignment: .leading, spacing: 8) {
+            // TO Section
+            VStack(alignment: .leading, spacing: 12) {
                 Text("To")
-                    .font(.body)
-                    .fontWeight(.semibold)
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.primary)
                 
                 SimpleDropdownButton(
@@ -642,99 +785,72 @@ struct AddEntryView: View {
                     isFocused: $isToFieldFocused
                 )
                 .frame(height: 50)
-            }
-            .padding(.horizontal, 20)
-            
-            // Amount Field
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Amount")
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
                 
-                HStack(spacing: 0) {
-                    // Currency Dropdown
-                    CurrencyDropdownButton(
-                        selectedCurrency: currencyManager.selectedCurrency,
-                        isOpen: $currencyDropdownOpen,
-                        buttonFrame: $currencyButtonFrame
-                    )
-                    .frame(width: 60, height: 50)
-                    
-                    // Amount Input
-                    TextField("0.00", text: $amount)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .focused($isAmountFieldFocused)
-#if os(iOS)
-                        .keyboardType(.decimalPad)
-#endif
-                        .padding(.horizontal, 16)
-                        .frame(height: 50)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.white)
-                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                // Show balance immediately below
+                if let customer = selectedToCustomer {
+                    compactCustomerBalance(for: customer)
                 }
             }
             .padding(.horizontal, 20)
             
-            // Exchange Rate Section (only if exchange is on)
-            if isExchangeOn {
-                exchangeRateSection
+            // AMOUNT Section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Amount")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                combinedAmountCurrencyField
+                    .frame(height: 50)
             }
+            .padding(.horizontal, 20)
+            
+            // EXCHANGE RATE Section
+            if isExchangeOn {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Exchange Rate")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    exchangeRateCompactField
+                        .frame(height: 50)
+                    
+                    // Show profit/loss immediately below
+                    if shouldShowExchangeDetails {
+                        exchangeProfitLossDisplay
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            
+            // Notes Section
+            notesRow
             
             // Action Buttons
             VStack(spacing: 16) {
-                Button(action: {
-                    showingAddCustomerDialog = true
-                }) {
+                Button(action: { showingAddCustomerDialog = true }) {
                     HStack(spacing: 8) {
                         Image(systemName: "person.badge.plus")
                             .font(.body)
-                            .fontWeight(.medium)
                         Text("Add Customer")
                             .font(.body)
                             .fontWeight(.semibold)
                     }
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 50)
-                    .background(
-                        LinearGradient(
-                            gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
+                    .background(Color.blue)
                     .cornerRadius(10)
                 }
                 .buttonStyle(PlainButtonStyle())
                 
-                Button(action: {
-                    addTransaction()
-                }) {
+                Button(action: { addTransaction() }) {
                     Text(isProcessingTransaction ? "Processing..." : "Add Entry")
                         .font(.body)
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 50)
                         .background(
-                            LinearGradient(
-                                gradient: Gradient(colors: [
-                                    isTransactionValid && !isProcessingTransaction ? Color(red: 0.3, green: 0.4, blue: 0.6) : Color.gray.opacity(0.5),
-                                    isTransactionValid && !isProcessingTransaction ? Color(red: 0.25, green: 0.35, blue: 0.55) : Color.gray.opacity(0.4)
-                                ]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                            isTransactionValid && !isProcessingTransaction ?
+                            Color(red: 0.3, green: 0.4, blue: 0.6) : Color.gray.opacity(0.5)
                         )
                         .cornerRadius(10)
                 }
@@ -744,307 +860,265 @@ struct AddEntryView: View {
             .padding(.horizontal, 20)
         }
     }
-    
-    private var horizontalTransactionForm: some View {
-        HStack(spacing: 20) {
-            // From Dropdown
-            VStack(alignment: .leading, spacing: 8) {
-                Text("From")
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
-                SimpleDropdownButton(
-                    selectedCustomer: selectedFromCustomer,
-                    placeholder: "Select customer",
-                    isOpen: $selectedFromDropdownOpen,
-                    buttonFrame: $fromButtonFrame,
-                    searchText: $fromSearchText,
-                    isFocused: $isFromFieldFocused
-                )
-                .frame(width: dropdownWidth, height: 50)
-            }
-            
-            // Arrow
-            VStack(alignment: .center, spacing: 8) {
-                Text("")
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.clear)
-                
-                HStack(spacing: 6) {
-                    Text("gives to")
-                        .font(.callout)
-                        .fontWeight(.medium)
-                        .foregroundColor(.blue)
-                    
-                    Image(systemName: "arrow.right")
-                        .font(.callout)
-                        .fontWeight(.medium)
-                        .foregroundColor(.blue)
-                }
-                .frame(height: 50)
-                .frame(maxWidth: .infinity)
-                .background(Color.blue.opacity(0.05))
-                .cornerRadius(10)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.blue.opacity(0.15), lineWidth: 1)
-                )
-            }
-            .frame(width: 100)
-            
-            // To Dropdown
-            VStack(alignment: .leading, spacing: 8) {
-                Text("To")
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
-                SimpleDropdownButton(
-                    selectedCustomer: selectedToCustomer,
-                    placeholder: "Select customer",
-                    isOpen: $selectedToDropdownOpen,
-                    buttonFrame: $toButtonFrame,
-                    searchText: $toSearchText,
-                    isFocused: $isToFieldFocused
-                )
-                .frame(width: dropdownWidth, height: 50)
-            }
-            
-            // Amount Field
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Amount")
-                    .font(.body)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
-                HStack(spacing: 0) {
-                    // Currency Dropdown
-                    CurrencyDropdownButton(
-                        selectedCurrency: currencyManager.selectedCurrency,
-                        isOpen: $currencyDropdownOpen,
-                        buttonFrame: $currencyButtonFrame
-                    )
-                    .frame(width: 60, height: 50)
-                    
-                    // Amount Input
-                    TextField("0.00", text: $amount)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .focused($isAmountFieldFocused)
-#if os(iOS)
-                        .keyboardType(.decimalPad)
-#endif
-                        .padding(.horizontal, 16)
-                        .frame(height: 50)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.white)
-                                .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                }
-            }
-            .frame(width: amountFieldWidth)
-            
-            // Exchange Rate Section (only if exchange is on)
-            if isExchangeOn {
-                exchangeRateSection
-            }
-            
-            // Add Customer Button
-            VStack(spacing: 8) {
-                Text("New Customer")
-                    .font(.callout)
-                    .fontWeight(.medium)
-                    .foregroundColor(.blue)
-                
-                Button(action: {
-                    showingAddCustomerDialog = true
-                }) {
-                    Image(systemName: "person.badge.plus")
-                        .font(.title2)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white)
-                        .frame(width: 50, height: 50)
-                        .background(
-                            LinearGradient(
-                                gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .cornerRadius(10)
-                        .shadow(color: .blue.opacity(0.3), radius: 4, x: 0, y: 2)
-                }
-                .buttonStyle(PlainButtonStyle())
-            }
-            
-            // Add Entry Button
-            VStack(spacing: 8) {
-                Text("Complete Transaction")
-                    .font(.callout)
-                    .fontWeight(.medium)
-                    .foregroundColor(Color(red: 0.3, green: 0.4, blue: 0.6))
-                
-                Button(action: {
-                    addTransaction()
-                }) {
-                    Text(isProcessingTransaction ? "Processing..." : "Add Entry")
-                        .font(.body)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(
-                            LinearGradient(
-                                gradient: Gradient(colors: [
-                                    isTransactionValid && !isProcessingTransaction ? Color(red: 0.3, green: 0.4, blue: 0.6) : Color.gray.opacity(0.5),
-                                    isTransactionValid && !isProcessingTransaction ? Color(red: 0.25, green: 0.35, blue: 0.55) : Color.gray.opacity(0.4)
-                                ]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                        .cornerRadius(10)
-                        .shadow(color: Color(red: 0.3, green: 0.4, blue: 0.6).opacity(0.3), radius: 4, x: 0, y: 2)
-                        .frame(height: 50)
-                }
-                .disabled(!isTransactionValid || isProcessingTransaction)
-                .buttonStyle(PlainButtonStyle())
-            }
-        }
-        .padding(.horizontal, horizontalPadding)
-    }
-    
-    private var exchangeRateSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Exchange Rate")
-                .font(.body)
-                .fontWeight(.semibold)
-                .foregroundColor(.primary)
-            
-            HStack(spacing: 12) {
-                // Given currency (fixed)
+
+    // Combined Amount and Currency Field (Compact)
+    private var combinedAmountCurrencyField: some View {
+        HStack(spacing: 0) {
+            // Currency Button (Left)
+            Button(action: { currencyDropdownOpen.toggle() }) {
                 HStack(spacing: 4) {
-                    Text("1")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
+                    Text(currencyManager.selectedCurrency?.symbol ?? "$")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
                     Text(currencyManager.selectedCurrency?.name ?? "CAD")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                    Image(systemName: currencyDropdownOpen ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white)
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 44)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
-                
-                // Equals sign
+                .background(Color.blue)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .background(
+                GeometryReader { geometry in
+                    Color.clear.onAppear {
+                        currencyButtonFrame = geometry.frame(in: .global)
+                    }
+                }
+            )
+            
+            // Amount Input (Right)
+            TextField("0.00", text: $amount)
+                .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                .focused($isAmountFieldFocused)
+                #if os(iOS)
+                .keyboardType(.decimalPad)
+                #endif
+                .padding(.horizontal, 12)
+                .frame(height: 44)
+                .background(Color.white)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+        )
+    }
+
+    // Compact Exchange Rate Field
+    private var exchangeRateCompactField: some View {
+        HStack(spacing: 8) {
+            // 1 Currency =
+            HStack(spacing: 4) {
+                Text("1")
+                    .font(.system(size: 14, weight: .semibold))
+                Text(currencyManager.selectedCurrency?.name ?? "CAD")
+                    .font(.system(size: 12, weight: .medium))
                 Text("=")
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                
-                // Custom rate input
-                TextField("Rate", text: $customExchangeRate)
-                    .font(.body)
-                    .fontWeight(.medium)
-#if os(iOS)
-                    .keyboardType(.decimalPad)
-#endif
-                    .padding(.horizontal, 12)
-                    .frame(height: 44)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.white)
-                            .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-                    .frame(width: 80)
-                
-                // Receiving currency dropdown
-                CurrencyDropdownButton(
-                    selectedCurrency: selectedReceivingCurrency,
-                    isOpen: $showReceivingCurrencyDropdown,
-                    buttonFrame: $receivingCurrencyButtonFrame
-                )
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundColor(.primary)
+            .padding(.horizontal, 8)
+            .frame(height: 44)
+            .background(Color.gray.opacity(0.1))
+            .cornerRadius(6)
+            
+            // Rate Input
+            TextField("Rate", text: $customExchangeRate)
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                #if os(iOS)
+                .keyboardType(.decimalPad)
+                #endif
+                .padding(.horizontal, 8)
                 .frame(width: 60, height: 44)
+                .background(Color.white)
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+            
+            // Receiving Currency
+            Button(action: { showReceivingCurrencyDropdown.toggle() }) {
+                Text(selectedReceivingCurrency?.name ?? "Select")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .frame(height: 44)
+                    .background(Color.orange)
+                    .cornerRadius(6)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .background(
+                GeometryReader { geometry in
+                    Color.clear.onAppear {
+                        receivingCurrencyButtonFrame = geometry.frame(in: .global)
+                    }
+                }
+            )
+        }
+    }
+
+    // Customer Balances Row
+    private var customerBalancesRow: some View {
+        HStack(spacing: 40) {
+            // From Customer Balance
+            if let customer = selectedFromCustomer {
+                HStack(spacing: 12) {
+                    Text("\(customer.name) balances:")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
+                    
+                    CustomerBalancesView(customer: customer)
+                }
             }
             
-            // Market rate comparison (if available)
-            if let givingCurrency = currencyManager.selectedCurrency,
-               let receivingCurrency = selectedReceivingCurrency,
-               let customRate = Double(customExchangeRate.trimmingCharacters(in: .whitespaces)) {
-                
-                let marketRate = calculateMarketRate(from: givingCurrency, to: receivingCurrency)
-                let profitRate = customRate - marketRate
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Market rate:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("1 \(givingCurrency.name) = \(marketRate, specifier: "%.2f") \(receivingCurrency.name)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
+            Spacer()
+            
+            // To Customer Balance
+            if let customer = selectedToCustomer {
+                HStack(spacing: 12) {
+                    Text("\(customer.name) balances:")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.secondary)
                     
-                    if profitRate > 0 {
-                        HStack {
-                            Text("Your profit:")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                            Text("+\(profitRate, specifier: "%.2f") \(receivingCurrency.name) per \(givingCurrency.name)")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                                .fontWeight(.medium)
-                        }
-                    }
+                    CustomerBalancesView(customer: customer)
                 }
             }
         }
-        .padding(.horizontal, shouldUseVerticalLayout ? 20 : 0)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(10)
+        .padding(.horizontal, 20)
     }
-    
+
+    // Exchange Details Row
+    private var exchangeDetailsRow: some View {
+        exchangeProfitLossDisplay
+            .padding(.horizontal, 20)
+    }
+
+    // Compact Customer Balance (for vertical layout)
+    private func compactCustomerBalance(for customer: Customer) -> some View {
+        HStack(spacing: 8) {
+            Text("Balances:")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+            
+            CustomerBalancesView(customer: customer)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.gray.opacity(0.05))
+        .cornerRadius(6)
+    }
+
+    // ADDED: Missing calculateMarketRate function
     private func calculateMarketRate(from: Currency, to: Currency) -> Double {
-        // Both currencies have exchange rates relative to CAD
+        // Both currencies have exchange rates relative to USD
         // To convert from currency A to currency B:
-        // 1 A = (1 / A.exchangeRate) CAD = (1 / A.exchangeRate) * B.exchangeRate B
+        // 1 A = (1 / A.exchangeRate) USD = (1 / A.exchangeRate) * B.exchangeRate B
         return (1.0 / from.exchangeRate) * to.exchangeRate
     }
-    
-    private var notesSection: some View {
-        HStack(spacing: 16) {
+
+    // Exchange Profit/Loss Display
+    private var exchangeProfitLossDisplay: some View {
+        Group {
+            if let givingCurrency = currencyManager.selectedCurrency,
+               let receivingCurrency = selectedReceivingCurrency,
+               let customRate = Double(customExchangeRate.trimmingCharacters(in: .whitespaces)),
+               let transactionAmount = Double(amount.trimmingCharacters(in: .whitespaces)),
+               customRate > 0 && transactionAmount > 0 {
+                
+                let marketRate = calculateMarketRate(from: givingCurrency, to: receivingCurrency)
+                let profitRate = customRate - marketRate
+                let totalProfitLoss = profitRate * transactionAmount
+                
+                HStack(spacing: 20) {
+                    // Market Rate
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Market Rate")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        Text("1 \(givingCurrency.name) = \(marketRate, specifier: "%.4f") \(receivingCurrency.name)")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Spacer()
+                    
+                    // Profit/Loss
+                    if abs(totalProfitLoss) >= 0.01 {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(totalProfitLoss > 0 ? "Your Profit" : "Your Loss")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(totalProfitLoss > 0 ? .green : .red)
+                            Text("\(totalProfitLoss > 0 ? "+" : "")\(totalProfitLoss, specifier: "%.2f") \(receivingCurrency.name)")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundColor(totalProfitLoss > 0 ? .green : .red)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(totalProfitLoss > 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
+                        )
+                    } else {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("Break Even")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.gray)
+                            Text("No profit/loss")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.gray)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.gray.opacity(0.1))
+                        )
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color.orange.opacity(0.05))
+                .cornerRadius(10)
+            }
+        }
+    }
+
+    // Notes Row
+    private var notesRow: some View {
+        HStack(spacing: 12) {
             Image(systemName: "note.text")
-                .font(.title2)
+                .font(.system(size: 16, weight: .medium))
                 .foregroundColor(.blue)
             
             TextField("Add notes (optional)", text: $notes)
-                .font(.body)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.white)
-                        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
-                )
+                .font(.system(size: 14, weight: .medium))
+                .padding(.horizontal, 12)
+                .frame(height: 40)
+                .background(Color.gray.opacity(0.05))
+                .cornerRadius(8)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
-                .frame(height: 50)
         }
-        .padding(.horizontal, horizontalPadding)
+        .padding(.horizontal, 20)
+    }
+
+    // Helper computed property
+    private var shouldShowExchangeDetails: Bool {
+        return !customExchangeRate.trimmingCharacters(in: .whitespaces).isEmpty &&
+               !amount.trimmingCharacters(in: .whitespaces).isEmpty &&
+               selectedReceivingCurrency != nil &&
+               currencyManager.selectedCurrency != nil
     }
     
     private var statusIndicators: some View {
@@ -1610,8 +1684,6 @@ struct CurrencyDropdownOverlay: View {
     }
 }
 
-// Key updates for TransactionRowView in AddEntryView.swift
-
 struct TransactionRowView: View {
     let transaction: CurrencyTransaction
     
@@ -1639,35 +1711,40 @@ struct TransactionRowView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            // Header with amount and currency
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    if transaction.isExchange {
-                        HStack(spacing: 8) {
-                            Text("\(transaction.amount, specifier: "%.2f") \(transaction.currencyName)")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.primary)
-                            
-                            Image(systemName: "arrow.right")
-                                .font(.callout)
-                                .foregroundColor(.blue)
-                            
+        VStack(spacing: 0) {
+            // Title Row: Amounts, Exchange, Date
+            HStack(alignment: .center, spacing: 0) {
+                // Amount/Exchange Section
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 10) {
+                        Text("\(transaction.amount, specifier: "%.2f") \(transaction.currencyName)")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        // Only use right arrow, even for exchange
+                        Image(systemName: "arrow.right")
+                            .font(.title3)
+                            .foregroundColor(.blue)
+                        
+                        if transaction.isExchange {
                             Text("\(transaction.receivedAmount ?? 0, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
                                 .font(.title2)
                                 .fontWeight(.bold)
                                 .foregroundColor(.green)
+                                .lineLimit(1)
                         }
-                        
-                        HStack(spacing: 4) {
-                            Text("Exchange:")
+                    }
+                    
+                    if transaction.isExchange {
+                        HStack(spacing: 6) {
+                            Text("Exchange")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             Text("\(transaction.currencyName) → \(transaction.receivingCurrencyName ?? "")")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            
                             if let profit = transaction.profitAmount, profit > 0 {
                                 Text("(+\(profit, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "") profit)")
                                     .font(.caption)
@@ -1676,45 +1753,66 @@ struct TransactionRowView: View {
                             }
                         }
                     } else {
-                        Text("\(transaction.amount, specifier: "%.2f") \(transaction.currencyName)")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(.primary)
                         Text(transaction.currencyName)
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                 }
+                .frame(width: 270, alignment: .leading)
                 
-                Spacer()
+                Divider().frame(height: 60).padding(.horizontal, 8)
                 
-                VStack(alignment: .trailing, spacing: 2) {
+                // Parties
+                VStack(spacing: 8) {
+                    HStack(spacing: 10) {
+                        HStack(spacing: 4) {
+                            if transaction.giver == "myself_special_id" {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .foregroundColor(.blue)
+                            }
+                            Text(transaction.giverName)
+                                .fontWeight(.medium)
+                                .foregroundColor(transaction.giver == "myself_special_id" ? .blue : .primary)
+                        }
+                        Image(systemName: "arrow.right") // Always right arrow
+                            .foregroundColor(.blue)
+                        HStack(spacing: 4) {
+                            if transaction.taker == "myself_special_id" {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .foregroundColor(.blue)
+                            }
+                            Text(transaction.takerName)
+                                .fontWeight(.medium)
+                                .foregroundColor(transaction.taker == "myself_special_id" ? .blue : .primary)
+                        }
+                    }
+                    .font(.body)
+                }
+                .frame(width: 340, alignment: .center)
+                
+                Divider().frame(height: 60).padding(.horizontal, 8)
+                
+                // Date
+                VStack(alignment: .trailing, spacing: 4) {
                     Text(dateFormatter.string(from: transaction.timestamp.dateValue()))
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
-                    if transaction.isExchange {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.caption2)
-                                .foregroundColor(.blue)
-                            Text("EXCHANGE")
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.blue)
-                        }
-                    }
                 }
+                .frame(width: 140, alignment: .trailing)
             }
+            .padding(.vertical, 18)
+            .padding(.horizontal, 22)
+            .background(Color.systemGray6)
             
-            // Exchange rate information (for exchange transactions)
+            Divider()
+            
+            // Exchange Rate Table Row (if exchange)
             if transaction.isExchange,
                let customRate = transaction.customExchangeRate,
                let marketRate = transaction.marketExchangeRate {
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Exchange Rate:")
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Exchange Rate")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         Text("1 \(transaction.currencyName) = \(customRate, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
@@ -1722,18 +1820,24 @@ struct TransactionRowView: View {
                             .fontWeight(.medium)
                             .foregroundColor(.primary)
                     }
+                    .frame(width: 270, alignment: .leading)
                     
-                    HStack {
-                        Text("Market Rate:")
+                    Divider().frame(height: 34).padding(.horizontal, 8)
+                    
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Market Rate")
                             .font(.caption)
                             .foregroundColor(.secondary)
                         Text("1 \(transaction.currencyName) = \(marketRate, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                    .frame(width: 340, alignment: .leading)
                     
-                    if let profit = transaction.profitAmount, profit > 0 {
-                        HStack {
+                    Divider().frame(height: 34).padding(.horizontal, 8)
+                    
+                    VStack(alignment: .trailing, spacing: 2) {
+                        if let profit = transaction.profitAmount, profit > 0 {
                             Text("Profit Made:")
                                 .font(.caption)
                                 .foregroundColor(.green)
@@ -1743,162 +1847,121 @@ struct TransactionRowView: View {
                                 .foregroundColor(.green)
                         }
                     }
+                    .frame(width: 140, alignment: .trailing)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.blue.opacity(0.05))
-                .cornerRadius(8)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 22)
+                .background(Color.blue.opacity(0.04))
+                Divider()
             }
             
-            // Transaction flow
-            HStack(spacing: 12) {
-                // Giver
+            // Balances Table Row
+            HStack(spacing: 0) {
+                // Giver balances
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("From")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    HStack(spacing: 6) {
+                    HStack(spacing: 4) {
                         if transaction.giver == "myself_special_id" {
                             Image(systemName: "person.crop.circle.fill")
-                                .font(.callout)
+                                .font(.caption2)
                                 .foregroundColor(.blue)
                         }
                         Text(transaction.giverName)
-                            .font(.body)
+                            .font(.caption)
+                            .foregroundColor(transaction.giver == "myself_special_id" ? .blue : .secondary)
                             .fontWeight(.medium)
-                            .foregroundColor(transaction.giver == "myself_special_id" ? .blue : .primary)
+                    }
+                    ForEach(Array(giverBalances.keys.sorted()), id: \.self) { currencyKey in
+                        if let balance = giverBalances[currencyKey] {
+                            let roundedBalance = round(balance * 100) / 100
+                            HStack(spacing: 4) {
+                                Text(currencyKey == "amount" ? "CAD" : currencyKey)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Text("\(roundedBalance, specifier: "%.2f")")
+                                    .font(.caption)
+                                    .foregroundColor(abs(roundedBalance) < 0.01 ? .gray : (roundedBalance > 0 ? .green : .red))
+                                    .fontWeight(.medium)
+                            }
+                        }
                     }
                 }
+                .frame(width: 270, alignment: .leading)
                 
-                // Arrow
-                Image(systemName: transaction.isExchange ? "arrow.triangle.2.circlepath" : "arrow.right")
-                    .font(.body)
-                    .foregroundColor(.blue)
+                Divider().frame(height: 52).padding(.horizontal, 8)
                 
-                // Taker
+                // Taker balances
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("To")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    HStack(spacing: 6) {
+                    HStack(spacing: 4) {
                         if transaction.taker == "myself_special_id" {
                             Image(systemName: "person.crop.circle.fill")
-                                .font(.callout)
+                                .font(.caption2)
                                 .foregroundColor(.blue)
                         }
                         Text(transaction.takerName)
-                            .font(.body)
+                            .font(.caption)
+                            .foregroundColor(transaction.taker == "myself_special_id" ? .blue : .secondary)
                             .fontWeight(.medium)
-                            .foregroundColor(transaction.taker == "myself_special_id" ? .blue : .primary)
                     }
-                }
-                
-                Spacer()
-            }
-            
-            // Balances after transaction
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Balances after transaction")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fontWeight(.medium)
-                
-                HStack(alignment: .top, spacing: 20) {
-                    // Giver balances
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 4) {
-                            if transaction.giver == "myself_special_id" {
-                                Image(systemName: "person.crop.circle.fill")
+                    ForEach(Array(takerBalances.keys.sorted()), id: \.self) { currencyKey in
+                        if let balance = takerBalances[currencyKey] {
+                            let roundedBalance = round(balance * 100) / 100
+                            HStack(spacing: 4) {
+                                Text(currencyKey == "amount" ? "CAD" : currencyKey)
                                     .font(.caption2)
-                                    .foregroundColor(.blue)
-                            }
-                            Text(transaction.giverName)
-                                .font(.caption)
-                                .foregroundColor(transaction.giver == "myself_special_id" ? .blue : .secondary)
-                                .fontWeight(.medium)
-                        }
-                        
-                        // Replace the balance display sections in TransactionRowView
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(giverBalances.keys.sorted()), id: \.self) { currencyKey in
-                                if let balance = giverBalances[currencyKey] {
-                                    let roundedBalance = round(balance * 100) / 100  // Round to 2 decimal places
-                                    HStack(spacing: 4) {
-                                        Text(currencyKey == "amount" ? "CAD" : currencyKey)
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                        Text("\(roundedBalance, specifier: "%.2f")")
-                                            .font(.caption)
-                                            .foregroundColor(abs(roundedBalance) < 0.01 ? .gray : (roundedBalance > 0 ? .green : .red))
-                                            .fontWeight(.medium)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Taker balances
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 4) {
-                            if transaction.taker == "myself_special_id" {
-                                Image(systemName: "person.crop.circle.fill")
-                                    .font(.caption2)
-                                    .foregroundColor(.blue)
-                            }
-                            Text(transaction.takerName)
-                                .font(.caption)
-                                .foregroundColor(transaction.taker == "myself_special_id" ? .blue : .secondary)
-                                .fontWeight(.medium)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            ForEach(Array(takerBalances.keys.sorted()), id: \.self) { currencyKey in
-                                if let balance = takerBalances[currencyKey] {
-                                    let roundedBalance = round(balance * 100) / 100  // Round to 2 decimal places
-                                    HStack(spacing: 4) {
-                                        Text(currencyKey == "amount" ? "CAD" : currencyKey)
-                                            .font(.caption2)
-                                            .foregroundColor(.secondary)
-                                        Text("\(roundedBalance, specifier: "%.2f")")
-                                            .font(.caption)
-                                            .foregroundColor(abs(roundedBalance) < 0.01 ? .gray : (roundedBalance > 0 ? .green : .red))
-                                            .fontWeight(.medium)
-                                    }
-                                }
+                                    .foregroundColor(.secondary)
+                                Text("\(roundedBalance, specifier: "%.2f")")
+                                    .font(.caption)
+                                    .foregroundColor(abs(roundedBalance) < 0.01 ? .gray : (roundedBalance > 0 ? .green : .red))
+                                    .fontWeight(.medium)
                             }
                         }
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.gray.opacity(0.05))
-                .cornerRadius(8)
-            }
-            
-            // Notes (if any)
-            if !transaction.notes.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Notes")
-                        .font(.caption)
+                .frame(width: 340, alignment: .leading)
+                
+                Divider().frame(height: 52).padding(.horizontal, 8)
+                
+                // Label for symmetry (can be changed or left empty)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Balances")
+                        .font(.caption2)
                         .foregroundColor(.secondary)
+                }
+                .frame(width: 140, alignment: .trailing)
+            }
+            .padding(.vertical, 10)
+            .padding(.horizontal, 22)
+            .background(Color.systemGray6)
+            
+            Divider()
+            
+            // Notes Row, if any
+            if !transaction.notes.isEmpty {
+                HStack(alignment: .top) {
+                    Text("Notes:")
+                        .font(.caption)
                         .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .frame(width: 80, alignment: .leading)
                     Text(transaction.notes)
                         .font(.callout)
                         .foregroundColor(.primary)
+                    Spacer()
                 }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 22)
             }
         }
-        .padding()
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.systemBackgroundColor)
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.systemBackground)
                 .shadow(color: .black.opacity(0.05), radius: 4, x: 0, y: 2)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.gray.opacity(0.1), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.gray.opacity(0.13), lineWidth: 1)
         )
+        .padding(.vertical, 8)
+        .padding(.horizontal, 2)
     }
 }

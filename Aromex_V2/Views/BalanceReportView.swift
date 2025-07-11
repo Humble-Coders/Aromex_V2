@@ -55,12 +55,14 @@ struct BalanceReportView: View {
     }
     
     private var currencies: [String] {
-        guard !balanceData.isEmpty else {
-            return ["All", "CAD"] // Return default currencies if no data
-        }
-        
-        let allCurrencies = Set(balanceData.flatMap { $0.currencyBalances.keys })
-        return ["All", "CAD"] + Array(allCurrencies.filter { $0 != "CAD" }).sorted()
+        // Always show all available currencies from the currency manager
+        let allAvailableCurrencies = currencyManager.allCurrencies.map { $0.name }
+        return ["All"] + allAvailableCurrencies.sorted()
+    }
+    
+    private var displayCurrencies: [String] {
+        // Currencies to display in the table (excluding "All")
+        return currencies.filter { $0 != "All" }
     }
     
     var body: some View {
@@ -79,6 +81,7 @@ struct BalanceReportView: View {
         }
         .background(Color.systemGroupedBackground)
         .onAppear {
+            currencyManager.fetchCurrencies()
             fetchAllBalances()
         }
         .onChange(of: searchText) { _ in
@@ -102,69 +105,130 @@ struct BalanceReportView: View {
     }
     
     private var headerSection: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             // Title and refresh
-            HStack {
-                VStack(alignment: .leading) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Balance Report")
-                        .font(.largeTitle)
-                        .fontWeight(.bold)
+                        .font(.system(size: shouldUseVerticalLayout ? 28 : 32, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
                     
                     Text("Net balance with contacts • Tap to view details")
-                        .font(.subheadline)
+                        .font(.system(size: shouldUseVerticalLayout ? 14 : 16, weight: .medium))
                         .foregroundColor(.secondary)
                 }
                 
                 Spacer()
                 
                 Button(action: fetchAllBalances) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.title2)
-                        .foregroundColor(.blue)
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 16, weight: .medium))
+                        if !shouldUseVerticalLayout {
+                            Text("Refresh")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, shouldUseVerticalLayout ? 12 : 16)
+                    .padding(.vertical, shouldUseVerticalLayout ? 8 : 10)
+                    .background(
+                        LinearGradient(
+                            gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .cornerRadius(8)
+                    .shadow(color: .blue.opacity(0.3), radius: 4, x: 0, y: 2)
                 }
                 .disabled(isLoading)
+                .buttonStyle(PlainButtonStyle())
             }
             
-            // Search bar
-            HStack(spacing: 12) {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
+            // Search and Filter Controls
+            VStack(spacing: 16) {
+                // Search bar with improved styling
+                HStack(spacing: 16) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.secondary)
+                        
+                        TextField("Search by name or balance...", text: $searchText)
+                            .font(.system(size: 16, weight: .medium))
+                            .textFieldStyle(PlainTextFieldStyle())
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.systemGray6Color)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                            )
+                    )
                     
-                    TextField("Search by name or balance...", text: $searchText)
-                        .textFieldStyle(PlainTextFieldStyle())
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            showingFilters.toggle()
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: showingFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                                .font(.system(size: 16, weight: .medium))
+                            if !shouldUseVerticalLayout {
+                                Text("Filters")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                        }
+                        .foregroundColor(showingFilters ? .white : .blue)
+                        .padding(.horizontal, shouldUseVerticalLayout ? 12 : 16)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(showingFilters ? Color.blue : Color.blue.opacity(0.1))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                                )
+                        )
+                        .shadow(color: showingFilters ? .blue.opacity(0.3) : .clear, radius: 4, x: 0, y: 2)
+                    }
+                    .buttonStyle(PlainButtonStyle())
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.systemBackgroundColor)
-                .cornerRadius(10)
                 
-                Button(action: { showingFilters.toggle() }) {
-                    Image(systemName: "line.3.horizontal.decrease.circle")
-                        .font(.title2)
-                        .foregroundColor(.blue)
+                // Filters (if showing)
+                if showingFilters {
+                    filtersSection
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.95)),
+                            removal: .opacity.combined(with: .scale(scale: 0.95))
+                        ))
                 }
-            }
-            
-            // Filters (if showing)
-            if showingFilters {
-                filtersSection
             }
         }
-        .padding()
-        .background(Color.systemBackgroundColor)
-        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+        .padding(.horizontal, shouldUseVerticalLayout ? 16 : 24)
+        .padding(.vertical, 20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.systemBackgroundColor)
+                .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
+        )
+        .padding(.horizontal, shouldUseVerticalLayout ? 16 : 24)
+        .padding(.top, 16)
     }
     
     private var filtersSection: some View {
-        VStack(spacing: 12) {
-            // Currency filter and sort
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Currency")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+        VStack(spacing: 20) {
+            // First row: Currency filter and Sort controls
+            HStack(spacing: shouldUseVerticalLayout ? 12 : 20) {
+                // Currency Filter
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Filter by Currency")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
                     
                     Picker("Currency", selection: $selectedCurrencyFilter) {
                         ForEach(currencies, id: \.self) { currency in
@@ -173,64 +237,141 @@ struct BalanceReportView: View {
                     }
                     .pickerStyle(MenuPickerStyle())
                     .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.systemGray6Color)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                            )
+                    )
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
+                // Sort By
+                VStack(alignment: .leading, spacing: 8) {
                     Text("Sort by")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
                     
-                    Picker("Sort", selection: $sortBy) {
-                        ForEach(SortOption.allCases, id: \.self) { option in
-                            Text(option.rawValue).tag(option)
+                    HStack(spacing: 8) {
+                        Picker("Sort", selection: $sortBy) {
+                            ForEach(SortOption.allCases, id: \.self) { option in
+                                Text(option.rawValue).tag(option)
+                            }
                         }
+                        .pickerStyle(MenuPickerStyle())
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.systemGray6Color)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                )
+                        )
+                        
+                        Button(action: { sortAscending.toggle() }) {
+                            Image(systemName: sortAscending ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                                .font(.system(size: 24, weight: .medium))
+                                .foregroundColor(.blue)
+                        }
+                        .buttonStyle(PlainButtonStyle())
                     }
-                    .pickerStyle(MenuPickerStyle())
-                    .frame(maxWidth: .infinity)
-                }
-                
-                Button(action: { sortAscending.toggle() }) {
-                    Image(systemName: sortAscending ? "arrow.up" : "arrow.down")
-                        .font(.title2)
-                        .foregroundColor(.blue)
                 }
             }
             
-            // Amount range filter
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Min Amount")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            // Second row: Amount range filters
+            HStack(spacing: shouldUseVerticalLayout ? 12 : 20) {
+                // Min Amount
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Minimum Amount")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
                     
                     TextField("0.00", text: $minAmount)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .font(.system(size: 16, weight: .medium, design: .monospaced))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.systemGray6Color)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                )
+                        )
                         #if os(iOS)
                         .keyboardType(.decimalPad)
                         #endif
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Max Amount")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                // Max Amount
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Maximum Amount")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
                     
                     TextField("999999.99", text: $maxAmount)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .font(.system(size: 16, weight: .medium, design: .monospaced))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.systemGray6Color)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                )
+                        )
                         #if os(iOS)
                         .keyboardType(.decimalPad)
                         #endif
                 }
                 
-                Button("Clear") {
-                    clearFilters()
+                // Clear Filters Button
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Actions")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Button(action: clearFilters) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 14, weight: .medium))
+                            Text("Clear All")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.red, Color.red.opacity(0.8)]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .cornerRadius(8)
+                        .shadow(color: .red.opacity(0.3), radius: 4, x: 0, y: 2)
+                    }
+                    .buttonStyle(PlainButtonStyle())
                 }
-                .foregroundColor(.blue)
             }
         }
-        .padding()
-        .background(Color.systemGray6Color)
-        .cornerRadius(12)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 20)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.systemGray6Color.opacity(0.5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                )
+        )
     }
     
     private var balanceTableView: some View {
@@ -239,87 +380,83 @@ struct BalanceReportView: View {
                 // Table header
                 tableHeaderView
                 
-                // Table rows with grid lines
+                // Table rows
                 ForEach(filteredData.indices, id: \.self) { index in
                     let customer = filteredData[index]
                     CustomerBalanceRow(
                         customer: customer,
-                        currencies: currencies.filter { $0 != "All" },
+                        currencies: displayCurrencies,
                         isEven: index % 2 == 0,
                         showGridLines: true
                     )
                 }
             }
-            .overlay(
-                // Vertical grid lines
-                HStack(spacing: 0) {
-                    ForEach(0..<(currencies.filter { $0 != "All" }.count + 1), id: \.self) { index in
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.3))
-                            .frame(width: 1)
-                        if index == 0 {
-                            Spacer()
-                                .frame(maxWidth: .infinity)
-                        } else if index < currencies.filter { $0 != "All" }.count {
-                            Spacer()
-                                .frame(width: 100)
-                        }
-                    }
-                }
-            )
+            .background(Color.systemBackgroundColor)
+            .cornerRadius(12)
+            .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
         }
-        .background(Color.systemBackgroundColor)
+        .padding(.horizontal, shouldUseVerticalLayout ? 16 : 24)
+        .padding(.bottom, 20)
     }
     
     private var tableHeaderView: some View {
         HStack(spacing: 0) {
             // Person column
-            VStack(spacing: 2) {
-                Text("Person")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+            VStack(spacing: 4) {
+                Text("Contact")
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
                     .foregroundColor(.primary)
-                    .lineLimit(1)
+                Text("Name & Type")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(Color.systemGray5Color)
+            .frame(minWidth: shouldUseVerticalLayout ? 140 : 200, maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(
+                LinearGradient(
+                    gradient: Gradient(colors: [Color.blue.opacity(0.1), Color.blue.opacity(0.05)]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
             .overlay(
                 Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 1)
-                    .offset(x: 0.5),
+                    .fill(Color.blue.opacity(0.2))
+                    .frame(width: 1),
                 alignment: .trailing
             )
             
             // Currency columns
-            ForEach(currencies.filter { $0 != "All" }, id: \.self) { currency in
-                VStack(spacing: 2) {
+            ForEach(displayCurrencies, id: \.self) { currency in
+                VStack(spacing: 4) {
                     Text(currency)
-                        .font(.headline)
-                        .fontWeight(.semibold)
+                        .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundColor(.primary)
-                        .lineLimit(1)
                     Text("Balance")
-                        .font(.caption)
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.secondary)
                 }
-                .frame(width: 100)
-                .padding(.vertical, 12)
-                .background(Color.systemGray5Color)
+                .frame(width: shouldUseVerticalLayout ? 120 : 140)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(
+                        gradient: Gradient(colors: [Color.gray.opacity(0.08), Color.gray.opacity(0.04)]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
                 .overlay(
                     Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(width: 1)
-                        .offset(x: 0.5),
+                        .fill(Color.gray.opacity(0.2))
+                        .frame(width: 1),
                     alignment: .trailing
                 )
             }
         }
         .overlay(
             Rectangle()
-                .fill(Color.gray.opacity(0.3))
+                .fill(Color.gray.opacity(0.25))
                 .frame(height: 1),
             alignment: .bottom
         )
@@ -535,92 +672,105 @@ struct CustomerBalanceRow: View {
     let isEven: Bool
     let showGridLines: Bool
     
+    @Environment(\.horizontalSizeClass) var horizontalSizeClass
+    
+    private var shouldUseVerticalLayout: Bool {
+        #if os(iOS)
+        return horizontalSizeClass == .compact
+        #else
+        return false
+        #endif
+    }
+    
     var body: some View {
         HStack(spacing: 0) {
             // Person info column
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    // Customer type indicator
-                    Circle()
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 12) {
+                    // Customer type indicator with better styling
+                    RoundedRectangle(cornerRadius: 6)
                         .fill(customer.type == .customer ? Color.blue :
                               customer.type == .middleman ? Color.orange : Color.green)
-                        .frame(width: 8, height: 8)
+                        .frame(width: 12, height: 12)
+                        .overlay(
+                            Text(customer.type.shortTag)
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.white)
+                        )
                     
-                    Text(customer.name)
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                        .lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(customer.name)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                        
+                        Text(customer.type.displayName)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
                 }
-                
-                Text(customer.type.displayName)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(isEven ? Color.systemBackgroundColor : Color.systemGray6Color)
+            .frame(minWidth: shouldUseVerticalLayout ? 140 : 200, maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+            .background(isEven ? Color.systemBackgroundColor : Color.gray.opacity(0.02))
             .overlay(
                 Rectangle()
-                    .fill(Color.gray.opacity(0.3))
-                    .frame(width: 1)
-                    .offset(x: 0.5),
+                    .fill(Color.gray.opacity(0.15))
+                    .frame(width: 1),
                 alignment: .trailing
             )
             
             // Currency balance columns
             ForEach(currencies, id: \.self) { currency in
-                VStack(spacing: 4) {
+                VStack(spacing: 6) {
                     let balance = currency == "CAD" ? customer.cadBalance : (customer.currencyBalances[currency] ?? 0)
                     let roundedBalance = round(balance * 100) / 100
                     
                     if abs(roundedBalance) >= 0.01 {
                         Text("\(roundedBalance, specifier: "%.2f")")
-                            .font(.body)
-                            .fontWeight(.medium)
+                            .font(.system(size: 15, weight: .bold, design: .monospaced))
                             .foregroundColor(roundedBalance > 0 ? .green : .red)
                         
                         Text(roundedBalance > 0 ? "To Receive" : "To Pay")
-                            .font(.caption2)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
+                            .font(.system(size: 10, weight: .semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
                             .background(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(roundedBalance > 0 ? Color.green.opacity(0.15) : Color.red.opacity(0.15))
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(roundedBalance > 0 ? Color.green.opacity(0.12) : Color.red.opacity(0.12))
                             )
                             .foregroundColor(roundedBalance > 0 ? .green : .red)
                     } else {
                         Text("0.00")
-                            .font(.body)
+                            .font(.system(size: 15, weight: .medium, design: .monospaced))
                             .foregroundColor(.gray)
                         
                         Text("Settled")
-                            .font(.caption2)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
+                            .font(.system(size: 10, weight: .semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
                             .background(
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(Color.gray.opacity(0.15))
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.gray.opacity(0.12))
                             )
                             .foregroundColor(.gray)
                     }
                 }
-                .frame(width: 100)
-                .padding(.vertical, 12)
-                .background(isEven ? Color.systemBackgroundColor : Color.systemGray6Color)
+                .frame(width: shouldUseVerticalLayout ? 120 : 140)
+                .padding(.vertical, 16)
+                .background(isEven ? Color.systemBackgroundColor : Color.gray.opacity(0.02))
                 .overlay(
                     Rectangle()
-                        .fill(Color.gray.opacity(0.3))
-                        .frame(width: 1)
-                        .offset(x: 0.5),
+                        .fill(Color.gray.opacity(0.15))
+                        .frame(width: 1),
                     alignment: .trailing
                 )
             }
         }
         .overlay(
             Rectangle()
-                .fill(Color.gray.opacity(0.3))
+                .fill(Color.gray.opacity(0.1))
                 .frame(height: 1),
             alignment: .bottom
         )
