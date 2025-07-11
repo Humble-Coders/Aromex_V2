@@ -303,7 +303,7 @@ struct AddCurrencyDialog: View {
         if trimmedName.isEmpty {
             nameError = "Currency name is required."
             hasErrors = true
-        } else if currencyManager.currencies.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) {
+        } else if currencyManager.allCurrencies.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) {
             nameError = "A currency with this name already exists."
             hasErrors = true
         }
@@ -311,7 +311,7 @@ struct AddCurrencyDialog: View {
         if trimmedSymbol.isEmpty {
             symbolError = "Currency symbol is required."
             hasErrors = true
-        } else if currencyManager.currencies.contains(where: { $0.symbol == trimmedSymbol }) {
+        } else if currencyManager.allCurrencies.contains(where: { $0.symbol == trimmedSymbol }) {
             symbolError = "A currency with this symbol already exists."
             hasErrors = true
         }

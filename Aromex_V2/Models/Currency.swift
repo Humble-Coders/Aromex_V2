@@ -5,7 +5,7 @@ struct Currency: Identifiable, Codable {
     var id: String?
     var name: String
     var symbol: String
-    var exchangeRate: Double // Rate relative to USD (1 USD = exchangeRate of this currency)
+    var exchangeRate: Double // Rate relative to CAD (1 CAD = exchangeRate of this currency)
     var createdAt: Timestamp?
     var updatedAt: Timestamp?
     
@@ -52,11 +52,24 @@ class CurrencyManager: ObservableObject {
     
     private var currenciesListener: ListenerRegistration?
     
+    // Default CAD currency that's always available
+    private let defaultCAD = Currency(id: "default_cad_id", name: "CAD", symbol: "$", exchangeRate: 1.0)
+    
     private init() {
-        // Start with default USD currency
-        let defaultUSD = Currency(name: "USD", symbol: "$", exchangeRate: 1.0)
-        self.selectedCurrency = defaultUSD
+        // Start with default CAD currency
+        self.selectedCurrency = defaultCAD
         fetchCurrencies()
+    }
+    
+    // Computed property to get all currencies including CAD
+    var allCurrencies: [Currency] {
+        var allCurrencies = [defaultCAD] // Always include CAD first
+        
+        // Add other currencies from Firestore, but exclude any CAD duplicates
+        let otherCurrencies = currencies.filter { $0.name.uppercased() != "CAD" }
+        allCurrencies.append(contentsOf: otherCurrencies)
+        
+        return allCurrencies
     }
     
     func fetchCurrencies() {
@@ -140,16 +153,16 @@ class CurrencyManager: ObservableObject {
             
             self.currencies = fetchedCurrencies
             
-            // Set default selected currency to $ if not already set, or if no currencies exist
-            if self.selectedCurrency == nil || (fetchedCurrencies.isEmpty && self.selectedCurrency?.symbol != "$") {
-                let defaultUSD = Currency(name: "USD", symbol: "$", exchangeRate: 1.0)
-                self.selectedCurrency = defaultUSD
+            // Set default selected currency to CAD if not already set
+            if self.selectedCurrency == nil {
+                self.selectedCurrency = self.defaultCAD
             }
             
             self.isLoading = false
             self.errorMessage = ""
             
             print("✅ Successfully loaded \(fetchedCurrencies.count) currencies")
+            print("📊 Total available currencies including CAD: \(self.allCurrencies.count)")
         }
     }
     

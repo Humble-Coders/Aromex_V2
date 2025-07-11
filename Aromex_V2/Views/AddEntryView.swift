@@ -2,6 +2,7 @@ import SwiftUI
 #if os(macOS)
 import AppKit
 #endif
+import FirebaseFirestore
 
 // Color extension for cross-platform compatibility
 extension Color {
@@ -27,6 +28,103 @@ extension Color {
         #else
         return Color(.systemGray5)
         #endif
+    }
+}
+
+struct CustomerBalancesView: View {
+    let customer: Customer
+    @State private var currencyBalances: [String: Double] = [:]
+    @State private var isLoading = false
+    
+    private let db = Firestore.firestore()
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            // Always show CAD balance first
+            let roundedCADBalance = round(customer.balance * 100) / 100
+            HStack(spacing: 2) {
+                Text("CAD")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Text("\(roundedCADBalance, specifier: "%.2f")")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(abs(roundedCADBalance) < 0.01 ? .gray : (roundedCADBalance > 0 ? .green : .red))
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.gray.opacity(0.1))
+            )
+            
+            // Show other currencies only if they have non-zero balances
+            ForEach(Array(currencyBalances.keys.sorted()), id: \.self) { currencyName in
+                if let balance = currencyBalances[currencyName] {
+                    let roundedBalance = round(balance * 100) / 100
+                    if abs(roundedBalance) >= 0.01 { // Only show if not effectively zero
+                        HStack {
+                            Text("•")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            
+                            HStack(spacing: 2) {
+                                Text(currencyName)
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Text("\(roundedBalance, specifier: "%.2f")")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .foregroundColor(roundedBalance > 0 ? .green : .red)
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(Color.gray.opacity(0.1))
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear {
+            fetchCurrencyBalances()
+        }
+    }
+    
+    private func fetchCurrencyBalances() {
+        guard let customerId = customer.id, customerId != "myself_special_id" else {
+            return
+        }
+        
+        isLoading = true
+        
+        db.collection("CurrencyBalances").document(customerId).getDocument { snapshot, error in
+            DispatchQueue.main.async {
+                self.isLoading = false
+                
+                if let error = error {
+                    print("❌ Error fetching currency balances for \(customer.name): \(error.localizedDescription)")
+                    return
+                }
+                
+                guard let data = snapshot?.data() else {
+                    print("📄 No currency balances found for \(customer.name)")
+                    return
+                }
+                
+                var balances: [String: Double] = [:]
+                for (key, value) in data {
+                    if key != "updatedAt", let doubleValue = value as? Double {
+                        balances[key] = doubleValue
+                    }
+                }
+                
+                self.currencyBalances = balances
+                print("💰 Loaded currency balances for \(customer.name): \(balances)")
+            }
+        }
     }
 }
 
@@ -242,7 +340,7 @@ struct AddEntryView: View {
                 CurrencyDropdownOverlay(
                     isOpen: $currencyDropdownOpen,
                     selectedCurrency: $currencyManager.selectedCurrency,
-                    currencies: currencyManager.currencies,
+                    currencies: currencyManager.allCurrencies,
                     buttonFrame: currencyButtonFrame,
                     onAddCurrency: {
                         currencyDropdownOpen = false
@@ -255,7 +353,7 @@ struct AddEntryView: View {
                 CurrencyDropdownOverlay(
                     isOpen: $showReceivingCurrencyDropdown,
                     selectedCurrency: $selectedReceivingCurrency,
-                    currencies: currencyManager.currencies,
+                    currencies: currencyManager.allCurrencies,
                     buttonFrame: receivingCurrencyButtonFrame,
                     onAddCurrency: {
                         showReceivingCurrencyDropdown = false
@@ -838,7 +936,7 @@ struct AddEntryView: View {
                         .font(.body)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
-                    Text(currencyManager.selectedCurrency?.symbol ?? "$")
+                    Text(currencyManager.selectedCurrency?.name ?? "CAD")
                         .font(.body)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
@@ -896,7 +994,7 @@ struct AddEntryView: View {
                         Text("Market rate:")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("1\(givingCurrency.symbol) = \(marketRate, specifier: "%.2f")\(receivingCurrency.symbol)")
+                        Text("1 \(givingCurrency.name) = \(marketRate, specifier: "%.2f") \(receivingCurrency.name)")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -906,7 +1004,7 @@ struct AddEntryView: View {
                             Text("Your profit:")
                                 .font(.caption)
                                 .foregroundColor(.green)
-                            Text("+\(profitRate, specifier: "%.2f")\(receivingCurrency.symbol) per \(givingCurrency.symbol)")
+                            Text("+\(profitRate, specifier: "%.2f") \(receivingCurrency.name) per \(givingCurrency.name)")
                                 .font(.caption)
                                 .foregroundColor(.green)
                                 .fontWeight(.medium)
@@ -919,9 +1017,9 @@ struct AddEntryView: View {
     }
     
     private func calculateMarketRate(from: Currency, to: Currency) -> Double {
-        // Both currencies have exchange rates relative to USD
+        // Both currencies have exchange rates relative to CAD
         // To convert from currency A to currency B:
-        // 1 A = (1 / A.exchangeRate) USD = (1 / A.exchangeRate) * B.exchangeRate B
+        // 1 A = (1 / A.exchangeRate) CAD = (1 / A.exchangeRate) * B.exchangeRate B
         return (1.0 / from.exchangeRate) * to.exchangeRate
     }
     
@@ -1222,15 +1320,16 @@ struct CustomerDropdownOverlay: View {
     let buttonFrame: CGRect
     
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
+    @StateObject private var currencyManager = CurrencyManager.shared
     
     private var overlayWidth: CGFloat {
         #if os(macOS)
-        return max(350, buttonFrame.width)
+        return max(400, buttonFrame.width)
         #else
         if horizontalSizeClass == .compact {
             return UIScreen.main.bounds.width - 32
         } else {
-            return max(350, buttonFrame.width)
+            return max(400, buttonFrame.width)
         }
         #endif
     }
@@ -1255,7 +1354,8 @@ struct CustomerDropdownOverlay: View {
                                     }
                                 }) {
                                     HStack(spacing: 12) {
-                                        VStack(alignment: .leading, spacing: 4) {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            // Customer name with icon
                                             HStack(spacing: 6) {
                                                 if customer.id == "myself_special_id" {
                                                     Image(systemName: "person.crop.circle.fill")
@@ -1267,13 +1367,35 @@ struct CustomerDropdownOverlay: View {
                                                     .fontWeight(customer.id == "myself_special_id" ? .semibold : .medium)
                                                     .foregroundColor(customer.id == "myself_special_id" ? .blue : .primary)
                                             }
+                                            
+                                            // Currency balances
                                             if customer.id != "myself_special_id" {
-                                                Text("$\(customer.balance, specifier: "%.2f")")
-                                                    .font(.callout)
-                                                    .foregroundColor(customer.balance >= 0 ? .green : .red)
+                                                CustomerBalancesView(customer: customer)
+                                            } else {
+                                                // For "Myself", show placeholder balances
+                                                HStack(spacing: 8) {
+                                                    HStack(spacing: 2) {
+                                                        Text("CAD")
+                                                            .font(.caption2)
+                                                            .foregroundColor(.secondary)
+                                                        Text("0.00")
+                                                            .font(.caption)
+                                                            .fontWeight(.medium)
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 2)
+                                                    .background(
+                                                        RoundedRectangle(cornerRadius: 4)
+                                                            .fill(Color.blue.opacity(0.1))
+                                                    )
+                                                }
                                             }
                                         }
+                                        
                                         Spacer()
+                                        
+                                        // Customer type badge
                                         if customer.id != "myself_special_id" {
                                             Text("[\(customer.type.displayName)]")
                                                 .font(.caption2)
@@ -1307,7 +1429,7 @@ struct CustomerDropdownOverlay: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .frame(height: min(CGFloat(customers.count) * 60 + (customers.count > 1 ? 10 : 0), 240))
+                    .frame(height: min(CGFloat(customers.count) * 80 + (customers.count > 1 ? 10 : 0), 320))
                 }
                 .background(
                     RoundedRectangle(cornerRadius: 16)
@@ -1317,7 +1439,7 @@ struct CustomerDropdownOverlay: View {
                 .frame(width: overlayWidth)
                 .position(
                     x: buttonFrame.midX,
-                    y: buttonFrame.maxY + 15 + (min(CGFloat(customers.count) * 60 + (customers.count > 1 ? 10 : 0), 240) / 2)
+                    y: buttonFrame.maxY + 15 + (min(CGFloat(customers.count) * 80 + (customers.count > 1 ? 10 : 0), 320) / 2)
                 )
             )
     }
@@ -1329,18 +1451,21 @@ struct CurrencyDropdownButton: View {
     @Binding var buttonFrame: CGRect
     
     var body: some View {
-        HStack(spacing: 4) {
-            Text(selectedCurrency?.symbol ?? "$")
-                .font(.body)
+        HStack(spacing: 2) {
+            // Show currency name with better truncation
+            Text(selectedCurrency?.name ?? "CAD")
+                .font(.caption2)
                 .fontWeight(.medium)
                 .foregroundColor(.primary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7) // Allow text to scale down if needed
             
             Image(systemName: isOpen ? "chevron.up" : "chevron.down")
-                .font(.caption)
+                .font(.caption2)
                 .fontWeight(.medium)
                 .foregroundColor(.blue)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 4)
         .frame(height: 50)
         .background(
             RoundedRectangle(cornerRadius: 10)
@@ -1403,7 +1528,7 @@ struct CurrencyDropdownOverlay: View {
                 VStack(alignment: .leading, spacing: 0) {
                     ScrollView {
                         VStack(spacing: 0) {
-                            // Currency options
+                            // Currency options (now includes CAD always)
                             ForEach(currencies) { currency in
                                 Button(action: {
                                     withAnimation {
@@ -1485,6 +1610,8 @@ struct CurrencyDropdownOverlay: View {
     }
 }
 
+// Key updates for TransactionRowView in AddEntryView.swift
+
 struct TransactionRowView: View {
     let transaction: CurrencyTransaction
     
@@ -1518,7 +1645,7 @@ struct TransactionRowView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     if transaction.isExchange {
                         HStack(spacing: 8) {
-                            Text("\(transaction.currencyGiven)\(transaction.amount, specifier: "%.2f")")
+                            Text("\(transaction.amount, specifier: "%.2f") \(transaction.currencyName)")
                                 .font(.title2)
                                 .fontWeight(.bold)
                                 .foregroundColor(.primary)
@@ -1527,7 +1654,7 @@ struct TransactionRowView: View {
                                 .font(.callout)
                                 .foregroundColor(.blue)
                             
-                            Text("\(transaction.receivingCurrency ?? "")\(transaction.receivedAmount ?? 0, specifier: "%.2f")")
+                            Text("\(transaction.receivedAmount ?? 0, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
                                 .font(.title2)
                                 .fontWeight(.bold)
                                 .foregroundColor(.green)
@@ -1542,14 +1669,14 @@ struct TransactionRowView: View {
                                 .foregroundColor(.secondary)
                             
                             if let profit = transaction.profitAmount, profit > 0 {
-                                Text("(+\(profit, specifier: "%.2f")\(transaction.profitCurrency ?? "") profit)")
+                                Text("(+\(profit, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "") profit)")
                                     .font(.caption)
                                     .foregroundColor(.green)
                                     .fontWeight(.medium)
                             }
                         }
                     } else {
-                        Text("\(transaction.currencyGiven)\(transaction.amount, specifier: "%.2f")")
+                        Text("\(transaction.amount, specifier: "%.2f") \(transaction.currencyName)")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(.primary)
@@ -1590,7 +1717,7 @@ struct TransactionRowView: View {
                         Text("Exchange Rate:")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("1\(transaction.currencyGiven) = \(customRate, specifier: "%.2f")\(transaction.receivingCurrency ?? "")")
+                        Text("1 \(transaction.currencyName) = \(customRate, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
                             .font(.caption)
                             .fontWeight(.medium)
                             .foregroundColor(.primary)
@@ -1600,7 +1727,7 @@ struct TransactionRowView: View {
                         Text("Market Rate:")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("1\(transaction.currencyGiven) = \(marketRate, specifier: "%.2f")\(transaction.receivingCurrency ?? "")")
+                        Text("1 \(transaction.currencyName) = \(marketRate, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -1610,7 +1737,7 @@ struct TransactionRowView: View {
                             Text("Profit Made:")
                                 .font(.caption)
                                 .foregroundColor(.green)
-                            Text("+\(profit, specifier: "%.2f")\(transaction.profitCurrency ?? "")")
+                            Text("+\(profit, specifier: "%.2f") \(transaction.receivingCurrencyName ?? "")")
                                 .font(.caption)
                                 .fontWeight(.bold)
                                 .foregroundColor(.green)
@@ -1691,16 +1818,18 @@ struct TransactionRowView: View {
                                 .fontWeight(.medium)
                         }
                         
+                        // Replace the balance display sections in TransactionRowView
                         VStack(alignment: .leading, spacing: 2) {
                             ForEach(Array(giverBalances.keys.sorted()), id: \.self) { currencyKey in
                                 if let balance = giverBalances[currencyKey] {
+                                    let roundedBalance = round(balance * 100) / 100  // Round to 2 decimal places
                                     HStack(spacing: 4) {
-                                        Text(currencyKey == "amount" ? "$" : getCurrencySymbol(for: currencyKey))
+                                        Text(currencyKey == "amount" ? "CAD" : currencyKey)
                                             .font(.caption2)
                                             .foregroundColor(.secondary)
-                                        Text("\(balance, specifier: "%.2f")")
+                                        Text("\(roundedBalance, specifier: "%.2f")")
                                             .font(.caption)
-                                            .foregroundColor(balance >= 0 ? .green : .red)
+                                            .foregroundColor(abs(roundedBalance) < 0.01 ? .gray : (roundedBalance > 0 ? .green : .red))
                                             .fontWeight(.medium)
                                     }
                                 }
@@ -1727,13 +1856,14 @@ struct TransactionRowView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             ForEach(Array(takerBalances.keys.sorted()), id: \.self) { currencyKey in
                                 if let balance = takerBalances[currencyKey] {
+                                    let roundedBalance = round(balance * 100) / 100  // Round to 2 decimal places
                                     HStack(spacing: 4) {
-                                        Text(currencyKey == "amount" ? "$" : getCurrencySymbol(for: currencyKey))
+                                        Text(currencyKey == "amount" ? "CAD" : currencyKey)
                                             .font(.caption2)
                                             .foregroundColor(.secondary)
-                                        Text("\(balance, specifier: "%.2f")")
+                                        Text("\(roundedBalance, specifier: "%.2f")")
                                             .font(.caption)
-                                            .foregroundColor(balance >= 0 ? .green : .red)
+                                            .foregroundColor(abs(roundedBalance) < 0.01 ? .gray : (roundedBalance > 0 ? .green : .red))
                                             .fontWeight(.medium)
                                     }
                                 }
@@ -1770,22 +1900,5 @@ struct TransactionRowView: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(Color.gray.opacity(0.1), lineWidth: 1)
         )
-    }
-    
-    private func getCurrencySymbol(for currencyName: String) -> String {
-        // For "myself" balances, the key might be the currency name
-        // For customers, USD is stored as "USD"
-        switch currencyName {
-        case "USD", "amount":
-            return "$"
-        case "Euro":
-            return "€"
-        case "British Pound":
-            return "£"
-        case "Indian Rupee":
-            return "₹"
-        default:
-            return currencyName.prefix(1).uppercased() + ""
-        }
     }
 }

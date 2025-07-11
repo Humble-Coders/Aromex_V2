@@ -268,8 +268,8 @@ class TransactionManager: ObservableObject {
             var customerNewBalances = customerCurrentBalances
             
             if currency.symbol == "$" {
-                let currentAmount = customerNewBalances["USD"] ?? 0.0
-                customerNewBalances["USD"] = currentAmount - amount
+                let currentAmount = customerNewBalances["CAD"] ?? 0.0
+                customerNewBalances["CAD"] = currentAmount - amount
             } else {
                 let currentAmount = customerNewBalances[currency.name] ?? 0.0
                 customerNewBalances[currency.name] = currentAmount - amount
@@ -297,8 +297,8 @@ class TransactionManager: ObservableObject {
             var customerNewBalances = customerCurrentBalances
             
             if currency.symbol == "$" {
-                let currentAmount = customerNewBalances["USD"] ?? 0.0
-                customerNewBalances["USD"] = currentAmount + amount
+                let currentAmount = customerNewBalances["CAD"] ?? 0.0
+                customerNewBalances["CAD"] = currentAmount + amount
             } else {
                 let currentAmount = customerNewBalances[currency.name] ?? 0.0
                 customerNewBalances[currency.name] = currentAmount + amount
@@ -379,8 +379,8 @@ class TransactionManager: ObservableObject {
             var customerNewBalances = customerCurrentBalances
             
             if givingCurrency.symbol == "$" {
-                let currentAmount = customerNewBalances["USD"] ?? 0.0
-                customerNewBalances["USD"] = currentAmount - amount
+                let currentAmount = customerNewBalances["CAD"] ?? 0.0
+                customerNewBalances["CAD"] = currentAmount - amount
             } else {
                 let currentAmount = customerNewBalances[givingCurrency.name] ?? 0.0
                 customerNewBalances[givingCurrency.name] = currentAmount - amount
@@ -406,8 +406,8 @@ class TransactionManager: ObservableObject {
             var customerNewBalances = customerCurrentBalances
             
             if receivingCurrency.symbol == "$" {
-                let currentAmount = customerNewBalances["USD"] ?? 0.0
-                customerNewBalances["USD"] = currentAmount + receivedAmount
+                let currentAmount = customerNewBalances["CAD"] ?? 0.0
+                customerNewBalances["CAD"] = currentAmount + receivedAmount
             } else {
                 let currentAmount = customerNewBalances[receivingCurrency.name] ?? 0.0
                 customerNewBalances[receivingCurrency.name] = currentAmount + receivedAmount
@@ -453,7 +453,7 @@ class TransactionManager: ObservableObject {
         var currentData = balancesDoc.data() ?? [:]
         
         if currency.symbol == "$" {
-            // Update USD amount
+            // Update CAD amount
             let currentAmount = currentData["amount"] as? Double ?? 0.0
             currentData["amount"] = currentAmount + amount
         } else {
@@ -474,7 +474,7 @@ class TransactionManager: ObservableObject {
         let collectionName = "\(customerType.rawValue)s" // "Customers", "Middlemen", or "Suppliers"
         
         if currency.symbol == "$" {
-            // Update USD balance in the appropriate collection
+            // Update CAD balance in the appropriate collection
             let customerRef = db.collection(collectionName).document(customerId)
             
             // Check if document exists first
@@ -486,7 +486,7 @@ class TransactionManager: ObservableObject {
             let currentBalance = customerDoc.data()?["balance"] as? Double ?? 0.0
             batch.updateData(["balance": currentBalance + amount, "updatedAt": Timestamp()], forDocument: customerRef)
         } else {
-            // Update non-USD balance in CurrencyBalances collection
+            // Update non-CAD balance in CurrencyBalances collection
             let currencyBalanceRef = db.collection("CurrencyBalances").document(customerId)
             let currencyDoc = try await currencyBalanceRef.getDocument()
             var currentData = currencyDoc.data() ?? [:]
@@ -544,16 +544,16 @@ class TransactionManager: ObservableObject {
         let customerType = try await getCustomerType(customerId: customerId)
         let collectionName = "\(customerType.rawValue)s" // "Customers", "Middlemen", or "Suppliers"
         
-        // Get USD balance from the appropriate collection
+        // Get CAD balance from the appropriate collection
         let customerRef = db.collection(collectionName).document(customerId)
         let customerDoc = try await customerRef.getDocument()
         
         // Only get balance if document exists
-        if customerDoc.exists, let usdBalance = customerDoc.data()?["balance"] as? Double {
-            balances["USD"] = usdBalance
+        if customerDoc.exists, let cadBalance = customerDoc.data()?["balance"] as? Double {
+            balances["CAD"] = cadBalance
         } else {
             print("⚠️ \(customerType.displayName) document not found for ID: \(customerId)")
-            balances["USD"] = 0.0
+            balances["CAD"] = 0.0
         }
         
         // Get other currency balances from CurrencyBalances collection
