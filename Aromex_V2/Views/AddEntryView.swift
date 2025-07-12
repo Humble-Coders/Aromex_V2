@@ -181,6 +181,35 @@ struct AddEntryView: View {
     @StateObject private var salesTransactionManager = SalesTransactionManager.shared
     @StateObject private var mixedTransactionManager = MixedTransactionManager.shared
     
+    @State private var selectedTransactionTypes: Set<TransactionFilterType> = [.normalCash, .exchange]
+    @State private var searchText: String = ""
+    @State private var sortOption: SortOption = .newestFirst
+
+    enum TransactionFilterType: String, CaseIterable, Identifiable {
+        case normalCash = "Normal Cash"
+        case exchange = "Exchange"
+        case purchase = "Purchase"
+        case sales = "Sales"
+        
+        var id: String { self.rawValue }
+        
+        var icon: String {
+            switch self {
+            case .normalCash: return "dollarsign.circle"
+            case .exchange: return "arrow.triangle.2.circlepath"
+            case .purchase: return "cart.fill"
+            case .sales: return "bag.fill"
+            }
+        }
+    }
+
+    enum SortOption: String, CaseIterable {
+        case newestFirst = "Newest First"
+        case oldestFirst = "Oldest First"
+        case amountHighToLow = "Amount (High to Low)"
+        case amountLowToHigh = "Amount (Low to High)"
+    }
+
     enum ProfitTimeframe: String, CaseIterable {
         case day = "Day"
         case week = "Week"
@@ -196,6 +225,96 @@ struct AddEntryView: View {
             case .year: return "calendar.circle"
             case .all: return "infinity"
             }
+        }
+    }
+    
+    private var filteredMixedTransactions: [AnyMixedTransaction] {
+        var transactions = mixedTransactionManager.mixedTransactions
+        
+        // Filter by type
+        if !selectedTransactionTypes.isEmpty {
+            transactions = transactions.filter { transaction in
+                switch transaction.transactionType {
+                case .currency:
+                    guard let currencyTx = transaction.currencyTransaction else { return false }
+                    
+                    if currencyTx.isExchange {
+                        return selectedTransactionTypes.contains(.exchange)
+                    } else {
+                        return selectedTransactionTypes.contains(.normalCash)
+                    }
+                    
+                case .sales:
+                    return selectedTransactionTypes.contains(.sales)
+                    
+                case .purchase:
+                    return selectedTransactionTypes.contains(.purchase)
+                }
+            }
+        }
+        
+        // Filter by search text
+        if !searchText.isEmpty {
+            let searchLowercased = searchText.lowercased()
+            transactions = transactions.filter { transaction in
+                switch transaction.transactionType {
+                case .currency:
+                    if let t = transaction.currencyTransaction {
+                        return t.giverName.lowercased().contains(searchLowercased) ||
+                            t.takerName.lowercased().contains(searchLowercased) ||
+                            t.currencyName.lowercased().contains(searchLowercased) ||
+                            String(t.amount).contains(searchLowercased) ||
+                            (t.receivingCurrencyName?.lowercased().contains(searchLowercased) ?? false) ||
+                            (String(t.receivedAmount ?? 0).contains(searchLowercased)) ||
+                            t.notes.lowercased().contains(searchLowercased)
+                    }
+                    return false
+                case .sales:
+                    if let t = transaction.transaction as? SalesTransaction {
+                        return t.customerName.lowercased().contains(searchLowercased) ||
+                            String(t.amount).contains(searchLowercased)
+                    }
+                    return false
+                case .purchase:
+                    if let t = transaction.purchaseTransaction {
+                        return t.supplierName.lowercased().contains(searchLowercased) ||
+                            String(t.amount).contains(searchLowercased)
+                            
+                    }
+                    return false
+                }
+            }
+        }
+        
+        // Sort transactions
+        switch sortOption {
+        case .newestFirst:
+            return transactions.sorted { $0.timestamp.dateValue() > $1.timestamp.dateValue() }
+        case .oldestFirst:
+            return transactions.sorted { $0.timestamp.dateValue() < $1.timestamp.dateValue() }
+        case .amountHighToLow:
+            return transactions.sorted {
+                let amount1 = getAmount(for: $0)
+                let amount2 = getAmount(for: $1)
+                return amount1 > amount2
+            }
+        case .amountLowToHigh:
+            return transactions.sorted {
+                let amount1 = getAmount(for: $0)
+                let amount2 = getAmount(for: $1)
+                return amount1 < amount2
+            }
+        }
+    }
+    
+    private func getAmount(for transaction: AnyMixedTransaction) -> Double {
+        switch transaction.transactionType {
+        case .currency:
+            return transaction.currencyTransaction?.amount ?? 0
+        case .sales:
+            return (transaction.transaction as? SalesTransaction)?.amount ?? 0
+        case .purchase:
+            return transaction.purchaseTransaction?.amount ?? 0
         }
     }
     
@@ -604,7 +723,7 @@ struct AddEntryView: View {
     }
     
     private var allTransactionsSection: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 16) {
             // Section Header
             HStack {
                 HStack(spacing: 16) {
@@ -622,7 +741,7 @@ struct AddEntryView: View {
                 
                 if !mixedTransactionManager.mixedTransactions.isEmpty {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(mixedTransactionManager.mixedTransactions.count) transactions")
+                        Text("\(filteredMixedTransactions.count) of \(mixedTransactionManager.mixedTransactions.count)")
                             .font(.callout)
                             .foregroundColor(.secondary)
                         
@@ -645,44 +764,135 @@ struct AddEntryView: View {
                     }
                 }
             }
-            .padding(.horizontal, horizontalPadding)
+            
+            // Search and Filter Bar
+            VStack(spacing: 12) {
+                // Search Bar
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Search transactions...", text: $searchText)
+                        .textFieldStyle(PlainTextFieldStyle())
+                        .font(.body)
+                    
+                    if !searchText.isEmpty {
+                        Button(action: { searchText = "" }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.systemGray6)
+                .cornerRadius(10)
+                
+                // Filter and Sort Controls
+                HStack(spacing: 12) {
+                    // Type Filter
+                    Menu {
+                        ForEach(TransactionFilterType.allCases) { type in
+                            Button(action: {
+                                if selectedTransactionTypes.contains(type) {
+                                    selectedTransactionTypes.remove(type)
+                                } else {
+                                    selectedTransactionTypes.insert(type)
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: type.icon)
+                                    Text(type.rawValue)
+                                    if selectedTransactionTypes.contains(type) {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "line.3.horizontal.decrease.circle")
+                                .font(.callout)
+                            Text("Filter")
+                                .font(.callout)
+                            Text("(\(selectedTransactionTypes.count))")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.systemGray5)
+                        .cornerRadius(8)
+                    }
+                    
+                    // Sort Options
+                    Menu {
+                        ForEach(SortOption.allCases, id: \.self) { option in
+                            Button(action: { sortOption = option }) {
+                                HStack {
+                                    Text(option.rawValue)
+                                    if sortOption == option {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.up.arrow.down.circle")
+                                .font(.callout)
+                            Text("Sort: \(sortOption.rawValue)")
+                                .font(.callout)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Color.systemGray5)
+                        .cornerRadius(8)
+                    }
+                    
+                    Spacer()
+                }
+            }
             
             // Transactions List
-            VStack(spacing: 16) {
-                if transactionManager.isLoading || salesTransactionManager.isLoading {
-                    HStack {
-                        ProgressView()
-                            .scaleEffect(1.2)
-                        Text("Loading transactions...")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                    }
-                    .padding(.vertical, 40)
-                } else if mixedTransactionManager.mixedTransactions.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "doc.text")
-                            .font(.system(size: 40))
-                            .foregroundColor(.gray)
-                        Text("No transactions yet")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        Text("Start by adding your first transaction above")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.vertical, 40)
-                } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(mixedTransactionManager.mixedTransactions) { mixedTransaction in
-                            MixedTransactionView(mixedTransaction: mixedTransaction)
-                                .frame(maxWidth: .infinity)
-                        }
+            if transactionManager.isLoading || salesTransactionManager.isLoading {
+                HStack {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text("Loading transactions...")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 40)
+            } else if filteredMixedTransactions.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 40))
+                        .foregroundColor(.gray)
+                    Text(selectedTransactionTypes.isEmpty ? "No transaction types selected" : "No matching transactions")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                    Text(selectedTransactionTypes.isEmpty ?
+                         "Select at least one transaction type to view" :
+                         "Try changing your search or filter criteria")
+                        .font(.body)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.vertical, 40)
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(filteredMixedTransactions) { mixedTransaction in
+                        MixedTransactionView(mixedTransaction: mixedTransaction)
+                            .frame(maxWidth: .infinity)
                     }
                 }
             }
-            .padding(.horizontal, horizontalPadding)
         }
+        .padding(.horizontal, horizontalPadding)
     }
     private var horizontalTransactionForm: some View {
         VStack(spacing: 32) {
