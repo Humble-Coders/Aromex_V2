@@ -94,8 +94,11 @@ struct ContentView: View {
     }
 }
 
+// Replace the existing MainContentWithTabs in ContentView.swift
+// Replace the existing MainContentWithTabs in ContentView.swift
 struct MainContentWithTabs: View {
     @State private var selectedTab = 0
+    @StateObject private var navigationManager = CustomerNavigationManager.shared
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
     
     private var shouldUseVerticalLayout: Bool {
@@ -113,10 +116,16 @@ struct MainContentWithTabs: View {
                 switch selectedTab {
                 case 0:
                     AddEntryView()
+                        .environmentObject(navigationManager)
                 case 1:
                     BalanceReportView()
+                        .environmentObject(navigationManager)
+                case 2:
+                    CustomerDetailView()
+                        .environmentObject(navigationManager)
                 default:
                     AddEntryView()
+                        .environmentObject(navigationManager)
                 }
             }
             
@@ -124,6 +133,12 @@ struct MainContentWithTabs: View {
             TabBarView(selectedTab: $selectedTab)
         }
         .background(Color.systemGroupedBackground)
+        .onChange(of: navigationManager.shouldNavigateToDetails) { shouldNavigate in
+            if shouldNavigate {
+                selectedTab = 2 // Switch to Customer Details tab
+                navigationManager.resetNavigation()
+            }
+        }
     }
 }
 
@@ -155,6 +170,14 @@ struct TabBarView: View {
                 title: "Balance Report",
                 isSelected: selectedTab == 1,
                 action: { selectedTab = 1 }
+            )
+            
+            // Customer Detail Tab
+            TabBarButton(
+                icon: "person.text.rectangle.fill",
+                title: "Customer Details",
+                isSelected: selectedTab == 2,
+                action: { selectedTab = 2 }
             )
         }
         .background(

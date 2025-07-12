@@ -176,6 +176,8 @@ struct AddEntryView: View {
     @State private var selectedProfitTimeframe: ProfitTimeframe = .all
     @State private var showingTimeframeMenu: Bool = false
     
+    @EnvironmentObject var navigationManager: CustomerNavigationManager
+    
     enum ProfitTimeframe: String, CaseIterable {
         case day = "Day"
         case week = "Week"
@@ -652,6 +654,8 @@ struct AddEntryView: View {
                     LazyVStack(spacing: 12) {
                         ForEach(transactionManager.transactions) { transaction in
                             TransactionRowView(transaction: transaction)
+                                .environmentObject(firebaseManager)
+                                .environmentObject(navigationManager)
                                 .frame(maxWidth: .infinity)
                         }
                     }
@@ -1503,100 +1507,17 @@ struct AddEntryView: View {
     }
     
     private var totalExchangeProfitBarHorizontal: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.callout)
-                .foregroundColor(.white)
-            
-            Text("Profit:")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white.opacity(0.9))
-            
-            // Timeframe Filter Button
-            Menu {
-                ForEach(ProfitTimeframe.allCases, id: \.self) { timeframe in
-                    Button(action: {
-                        selectedProfitTimeframe = timeframe
-                        calculateTotalExchangeProfit()
-                    }) {
-                        HStack {
-                            Image(systemName: timeframe.icon)
-                            Text(timeframe.rawValue)
-                            if selectedProfitTimeframe == timeframe {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: selectedProfitTimeframe.icon)
-                        .font(.system(size: 10, weight: .medium))
-                    Text(selectedProfitTimeframe.rawValue)
-                        .font(.system(size: 11, weight: .semibold))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .medium))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.white.opacity(0.15))
-                .cornerRadius(4)
-            }
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Array(totalExchangeProfit.keys.sorted()), id: \.self) { currency in
-                        if let profit = totalExchangeProfit[currency], abs(profit) >= 0.01 {
-                            HStack(spacing: 3) {
-                                Text(profit > 0 ? "+" : "")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(profit > 0 ? .green : .red)
-                                Text("\(profit, specifier: "%.2f")")
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundColor(profit > 0 ? .green : .red)
-                                Text(currency)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.8))
-                            }
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background((profit > 0 ? Color.green : Color.red).opacity(0.15))
-                            .cornerRadius(4)
-                        }
-                    }
-                    
-                    if totalExchangeProfit.isEmpty || totalExchangeProfit.values.allSatisfy({ abs($0) < 0.01 }) {
-                        Text("No profit (\(selectedProfitTimeframe.rawValue.lowercased()))")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(4)
-                    }
-                }
-            }
-            .frame(maxWidth: 300)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Color.white.opacity(0.08))
-        .cornerRadius(6)
-    }
-
-    private var totalExchangeProfitBarVertical: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 6) {
+        Button(action: {}) {
+            HStack(spacing: 8) {
                 Image(systemName: "chart.line.uptrend.xyaxis")
-                    .font(.caption)
+                    .font(.body)
                     .foregroundColor(.white)
                 
-                Text("Profit")
-                    .font(.system(size: 12, weight: .semibold))
+                Text("Profit:")
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(.white.opacity(0.9))
                 
-                // Compact Timeframe Button
+                // Timeframe Filter Button
                 Menu {
                     ForEach(ProfitTimeframe.allCases, id: \.self) { timeframe in
                         Button(action: {
@@ -1613,57 +1534,146 @@ struct AddEntryView: View {
                         }
                     }
                 } label: {
-                    HStack(spacing: 2) {
+                    HStack(spacing: 4) {
                         Image(systemName: selectedProfitTimeframe.icon)
-                            .font(.system(size: 8, weight: .medium))
-                        Text(selectedProfitTimeframe == .all ? "All" : selectedProfitTimeframe.rawValue.first?.uppercased() ?? "")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: 10, weight: .medium))
+                        Text(selectedProfitTimeframe.rawValue)
+                            .font(.system(size: 11, weight: .semibold))
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 6, weight: .medium))
+                            .font(.system(size: 8, weight: .medium))
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
                     .background(Color.white.opacity(0.15))
-                    .cornerRadius(3)
+                    .cornerRadius(4)
                 }
-            }
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 5) {
-                    ForEach(Array(totalExchangeProfit.keys.sorted()), id: \.self) { currency in
-                        if let profit = totalExchangeProfit[currency], abs(profit) >= 0.01 {
-                            VStack(spacing: 1) {
-                                Text(currency)
-                                    .font(.system(size: 8, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.8))
-                                Text("\(profit > 0 ? "+" : "")\(profit, specifier: "%.1f")")
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundColor(profit > 0 ? .green : .red)
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(totalExchangeProfit.keys.sorted()), id: \.self) { currency in
+                            if let profit = totalExchangeProfit[currency], abs(profit) >= 0.01 {
+                                HStack(spacing: 3) {
+                                    Text(profit > 0 ? "+" : "")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(profit > 0 ? .green : .red)
+                                    Text("\(profit, specifier: "%.2f")")
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .foregroundColor(profit > 0 ? .green : .red)
+                                    Text(currency)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background((profit > 0 ? Color.green : Color.red).opacity(0.15))
+                                .cornerRadius(4)
                             }
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 2)
-                            .background((profit > 0 ? Color.green : Color.red).opacity(0.15))
-                            .cornerRadius(3)
+                        }
+                        
+                        if totalExchangeProfit.isEmpty || totalExchangeProfit.values.allSatisfy({ abs($0) < 0.01 }) {
+                            Text("No profit (\(selectedProfitTimeframe.rawValue.lowercased()))")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(4)
                         }
                     }
+                }
+                .frame(maxWidth: 300) // Limit the width similar to rates section
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.1))
+            .cornerRadius(8)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private var totalExchangeProfitBarVertical: some View {
+        Button(action: {}) {
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.callout)
+                        .foregroundColor(.white)
                     
-                    if totalExchangeProfit.isEmpty || totalExchangeProfit.values.allSatisfy({ abs($0) < 0.01 }) {
-                        Text("No profit")
-                            .font(.system(size: 9, weight: .medium))
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(3)
+                    Text("Profit")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.9))
+                    
+                    // Compact Timeframe Button
+                    Menu {
+                        ForEach(ProfitTimeframe.allCases, id: \.self) { timeframe in
+                            Button(action: {
+                                selectedProfitTimeframe = timeframe
+                                calculateTotalExchangeProfit()
+                            }) {
+                                HStack {
+                                    Image(systemName: timeframe.icon)
+                                    Text(timeframe.rawValue)
+                                    if selectedProfitTimeframe == timeframe {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: selectedProfitTimeframe.icon)
+                                .font(.system(size: 8, weight: .medium))
+                            Text(selectedProfitTimeframe == .all ? "All" : selectedProfitTimeframe.rawValue.first?.uppercased() ?? "")
+                                .font(.system(size: 9, weight: .semibold))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 6, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.white.opacity(0.15))
+                        .cornerRadius(3)
+                    }
+                }
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 5) {
+                        ForEach(Array(totalExchangeProfit.keys.sorted()), id: \.self) { currency in
+                            if let profit = totalExchangeProfit[currency], abs(profit) >= 0.01 {
+                                VStack(spacing: 1) {
+                                    Text(currency)
+                                        .font(.system(size: 8, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                    Text("\(profit > 0 ? "+" : "")\(profit, specifier: "%.1f")")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundColor(profit > 0 ? .green : .red)
+                                }
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background((profit > 0 ? Color.green : Color.red).opacity(0.15))
+                                .cornerRadius(3)
+                            }
+                        }
+                        
+                        if totalExchangeProfit.isEmpty || totalExchangeProfit.values.allSatisfy({ abs($0) < 0.01 }) {
+                            Text("No profit")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(3)
+                        }
                     }
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.white.opacity(0.1))
+            .cornerRadius(6)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.white.opacity(0.08))
-        .cornerRadius(5)
+        .buttonStyle(PlainButtonStyle())
     }
 
     private func calculateTotalExchangeProfit() {
@@ -2106,6 +2116,8 @@ struct CurrencyDropdownOverlay: View {
 struct TransactionRowView: View {
     let transaction: CurrencyTransaction
     @StateObject private var currencyManager = CurrencyManager.shared
+    @EnvironmentObject var firebaseManager: FirebaseManager
+    @EnvironmentObject var navigationManager: CustomerNavigationManager
     
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -2135,6 +2147,12 @@ struct TransactionRowView: View {
         }
     }
     
+    private func navigateToCustomer(id: String, name: String) {
+        // Find the customer in the firebaseManager
+        if let customer = firebaseManager.customers.first(where: { $0.id == id }) {
+            navigationManager.navigateToCustomer(customer)
+        }
+    }
     // Dynamic profit calculation using current exchange rates
     private var dynamicProfitData: (profit: Double, currency: String)? {
         guard transaction.isExchange,
@@ -2292,71 +2310,85 @@ struct TransactionRowView: View {
                             .foregroundColor(.secondary)
                         
                         HStack(spacing: 8) {
-                            // Giver
-                            HStack(spacing: 4) {
-                                if transaction.giver == "myself_special_id" {
-                                    Image(systemName: "person.circle.fill")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.blue)
-                                } else {
-                                    Circle()
-                                        .fill(Color.orange.opacity(0.7))
-                                        .frame(width: 8, height: 8)
+                            // Clickable Giver
+                            Button(action: {
+                                navigateToCustomer(id: transaction.giver, name: transaction.giverName)
+                            }) {
+                                HStack(spacing: 4) {
+                                    if transaction.giver == "myself_special_id" {
+                                        Image(systemName: "person.circle.fill")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.blue)
+                                    } else {
+                                        Circle()
+                                            .fill(Color.orange.opacity(0.7))
+                                            .frame(width: 8, height: 8)
+                                    }
+                                    
+                                    Text(transaction.giverName)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(transaction.giver == "myself_special_id" ? .blue : .primary)
+                                        .underline(transaction.giver != "myself_special_id") // Underline for non-myself customers
                                 }
-                                
-                                Text(transaction.giverName)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(transaction.giver == "myself_special_id" ? .blue : .primary)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [Color.orange.opacity(0.1), Color.orange.opacity(0.05)]),
-                                    startPoint: .leading,
-                                    endPoint: .trailing
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [Color.orange.opacity(0.1), Color.orange.opacity(0.05)]),
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
                                 )
-                            )
-                            .cornerRadius(6)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.orange.opacity(0.2), lineWidth: 1)
-                            )
+                                .cornerRadius(6)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(transaction.giver == "myself_special_id") // Disable click for "Myself"
                             
                             Image(systemName: "arrow.right")
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.blue.opacity(0.7))
                             
-                            // Taker
-                            HStack(spacing: 4) {
-                                if transaction.taker == "myself_special_id" {
-                                    Image(systemName: "person.circle.fill")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.blue)
-                                } else {
-                                    Circle()
-                                        .fill(Color.green.opacity(0.7))
-                                        .frame(width: 8, height: 8)
+                            // Clickable Taker
+                            Button(action: {
+                                navigateToCustomer(id: transaction.taker, name: transaction.takerName)
+                            }) {
+                                HStack(spacing: 4) {
+                                    if transaction.taker == "myself_special_id" {
+                                        Image(systemName: "person.circle.fill")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.blue)
+                                    } else {
+                                        Circle()
+                                            .fill(Color.green.opacity(0.7))
+                                            .frame(width: 8, height: 8)
+                                    }
+                                    
+                                    Text(transaction.takerName)
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundColor(transaction.taker == "myself_special_id" ? .blue : .primary)
+                                        .underline(transaction.taker != "myself_special_id") // Underline for non-myself customers
                                 }
-                                
-                                Text(transaction.takerName)
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundColor(transaction.taker == "myself_special_id" ? .blue : .primary)
-                            }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [Color.green.opacity(0.1), Color.green.opacity(0.05)]),
-                                    startPoint: .leading,
-                                    endPoint: .trailing
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    LinearGradient(
+                                        gradient: Gradient(colors: [Color.green.opacity(0.1), Color.green.opacity(0.05)]),
+                                        startPoint: .leading,
+                                        endPoint: .trailing
+                                    )
                                 )
-                            )
-                            .cornerRadius(6)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(Color.green.opacity(0.2), lineWidth: 1)
-                            )
+                                .cornerRadius(6)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .disabled(transaction.taker == "myself_special_id") // Disable click for "Myself"
                             
                             Spacer()
                         }

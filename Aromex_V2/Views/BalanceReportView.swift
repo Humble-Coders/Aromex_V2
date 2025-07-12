@@ -928,6 +928,8 @@ struct CustomerBalanceRow: View {
     let showGridLines: Bool
     
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
+    @EnvironmentObject var firebaseManager: FirebaseManager
+    @EnvironmentObject var navigationManager: CustomerNavigationManager
     
     private var shouldUseVerticalLayout: Bool {
         #if os(iOS)
@@ -937,82 +939,52 @@ struct CustomerBalanceRow: View {
         #endif
     }
     
+    private func navigateToCustomerDetail() {
+        // Find the actual customer object from firebaseManager
+        if let actualCustomer = firebaseManager.customers.first(where: { $0.id == customer.id }) {
+            navigationManager.navigateToCustomer(actualCustomer)
+        }
+    }
+    
     var body: some View {
-        HStack(spacing: 0) {
-            // Person info column
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 12) {
-                    // Customer type indicator with better styling
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(customer.type == .customer ? Color.blue :
-                              customer.type == .middleman ? Color.orange : Color.green)
-                        .frame(width: 12, height: 12)
-                        .overlay(
-                            Text(customer.type.shortTag)
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(.white)
-                        )
-                    
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(customer.name)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(.primary)
-                            .lineLimit(1)
+        Button(action: {
+            navigateToCustomerDetail()
+        }) {
+            HStack(spacing: 0) {
+                // Person info column - now clickable
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 12) {
+                        // Customer type indicator with better styling
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(customer.type == .customer ? Color.blue :
+                                  customer.type == .middleman ? Color.orange : Color.green)
+                            .frame(width: 12, height: 12)
+                            .overlay(
+                                Text(customer.type.shortTag)
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundColor(.white)
+                            )
                         
-                        Text(customer.type.displayName)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(customer.name)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+                                .underline() // Add underline to indicate clickability
+                            
+                            Text(customer.type.displayName)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                        
+                        // Click indicator
+                        Image(systemName: "arrow.up.right.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.blue.opacity(0.6))
                     }
                 }
-            }
-            .frame(minWidth: shouldUseVerticalLayout ? 140 : 200, maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
-            .background(isEven ? Color.systemBackgroundColor : Color.gray.opacity(0.02))
-            .overlay(
-                Rectangle()
-                    .fill(Color.gray.opacity(0.15))
-                    .frame(width: 1),
-                alignment: .trailing
-            )
-            
-            // Currency balance columns
-            ForEach(currencies, id: \.self) { currency in
-                VStack(spacing: 6) {
-                    let balance = currency == "CAD" ? customer.cadBalance : (customer.currencyBalances[currency] ?? 0)
-                    let roundedBalance = round(balance * 100) / 100
-                    
-                    if abs(roundedBalance) >= 0.01 {
-                        Text("\(roundedBalance, specifier: "%.2f")")
-                            .font(.system(size: 15, weight: .bold, design: .monospaced))
-                            .foregroundColor(roundedBalance > 0 ? .green : .red)
-                        
-                        Text(roundedBalance > 0 ? "To Receive" : "To Pay")
-                            .font(.system(size: 10, weight: .semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(roundedBalance > 0 ? Color.green.opacity(0.12) : Color.red.opacity(0.12))
-                            )
-                            .foregroundColor(roundedBalance > 0 ? .green : .red)
-                    } else {
-                        Text("0.00")
-                            .font(.system(size: 15, weight: .medium, design: .monospaced))
-                            .foregroundColor(.gray)
-                        
-                        Text("Settled")
-                            .font(.system(size: 10, weight: .semibold))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.gray.opacity(0.12))
-                            )
-                            .foregroundColor(.gray)
-                    }
-                }
-                .frame(width: shouldUseVerticalLayout ? 120 : 140)
+                .frame(minWidth: shouldUseVerticalLayout ? 140 : 200, maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
                 .padding(.vertical, 16)
                 .background(isEven ? Color.systemBackgroundColor : Color.gray.opacity(0.02))
                 .overlay(
@@ -1021,13 +993,61 @@ struct CustomerBalanceRow: View {
                         .frame(width: 1),
                     alignment: .trailing
                 )
+                
+                // Currency balance columns (keep existing code)
+                ForEach(currencies, id: \.self) { currency in
+                    VStack(spacing: 6) {
+                        let balance = currency == "CAD" ? customer.cadBalance : (customer.currencyBalances[currency] ?? 0)
+                        let roundedBalance = round(balance * 100) / 100
+                        
+                        if abs(roundedBalance) >= 0.01 {
+                            Text("\(roundedBalance, specifier: "%.2f")")
+                                .font(.system(size: 15, weight: .bold, design: .monospaced))
+                                .foregroundColor(roundedBalance > 0 ? .green : .red)
+                            
+                            Text(roundedBalance > 0 ? "To Receive" : "To Pay")
+                                .font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(roundedBalance > 0 ? Color.green.opacity(0.12) : Color.red.opacity(0.12))
+                                )
+                                .foregroundColor(roundedBalance > 0 ? .green : .red)
+                        } else {
+                            Text("0.00")
+                                .font(.system(size: 15, weight: .medium, design: .monospaced))
+                                .foregroundColor(.gray)
+                            
+                            Text("Settled")
+                                .font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.gray.opacity(0.12))
+                                )
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .frame(width: shouldUseVerticalLayout ? 120 : 140)
+                    .padding(.vertical, 16)
+                    .background(isEven ? Color.systemBackgroundColor : Color.gray.opacity(0.02))
+                    .overlay(
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.15))
+                            .frame(width: 1),
+                        alignment: .trailing
+                    )
+                }
             }
+            .overlay(
+                Rectangle()
+                    .fill(Color.gray.opacity(0.1))
+                    .frame(height: 1),
+                alignment: .bottom
+            )
         }
-        .overlay(
-            Rectangle()
-                .fill(Color.gray.opacity(0.1))
-                .frame(height: 1),
-            alignment: .bottom
-        )
+        .buttonStyle(PlainButtonStyle())
     }
 }
