@@ -269,6 +269,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Aromex-V2-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Aromex;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025 Humble Coders. All rights reserved.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "This app needs network access to sync customer data with Firebase.";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
@@ -314,6 +315,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Aromex-V2-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Aromex;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.business";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025 Humble Coders. All rights reserved.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "This app needs network access to sync customer data with Firebase.";
 				INFOPLIST_KEY_NSPrincipalClass = NSApplication;

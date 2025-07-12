@@ -49,6 +49,8 @@ class CurrencyManager: ObservableObject {
     @Published var selectedCurrency: Currency?
     @Published var isLoading = false
     @Published var errorMessage = ""
+    @Published var directExchangeRates: [String: DirectExchangeRate] = [:]
+    private var directRatesListener: ListenerRegistration?
     
     private var currenciesListener: ListenerRegistration?
     
@@ -59,6 +61,118 @@ class CurrencyManager: ObservableObject {
         // Start with default CAD currency
         self.selectedCurrency = defaultCAD
         fetchCurrencies()
+        fetchDirectExchangeRates() // Add this line
+    }
+    
+    // Add these methods inside the existing CurrencyManager class
+
+    func fetchDirectExchangeRates() {
+        print("🔍 Fetching direct exchange rates from Firestore...")
+        
+        directRatesListener?.remove()
+        
+        directRatesListener = db.collection("DirectExchangeRates")
+            .addSnapshotListener { [weak self] querySnapshot, error in
+                self?.handleDirectRatesUpdate(querySnapshot: querySnapshot, error: error)
+            }
+    }
+
+    private func handleDirectRatesUpdate(querySnapshot: QuerySnapshot?, error: Error?) {
+        DispatchQueue.main.async {
+            if let error = error {
+                print("❌ Error fetching direct exchange rates: \(error.localizedDescription)")
+                return
+            }
+            
+            guard let querySnapshot = querySnapshot else {
+                print("⚠️ QuerySnapshot is nil for DirectExchangeRates")
+                return
+            }
+            
+            var fetchedRates: [String: DirectExchangeRate] = [:]
+            
+            for document in querySnapshot.documents {
+                let data = document.data()
+                
+                if let fromCurrency = data["fromCurrency"] as? String,
+                   let toCurrency = data["toCurrency"] as? String,
+                   let rate = data["rate"] as? Double {
+                    
+                    var directRate = DirectExchangeRate(
+                        fromCurrency: fromCurrency,
+                        toCurrency: toCurrency,
+                        rate: rate
+                    )
+                    directRate.id = document.documentID
+                    directRate.createdAt = data["createdAt"] as? Timestamp
+                    directRate.updatedAt = data["updatedAt"] as? Timestamp
+                    
+                    let key = "\(fromCurrency)_to_\(toCurrency)"
+                    fetchedRates[key] = directRate
+                    
+                    print("💱 Found direct rate: 1 \(fromCurrency) = \(rate) \(toCurrency)")
+                }
+            }
+            
+            self.directExchangeRates = fetchedRates
+            print("✅ Loaded \(fetchedRates.count) direct exchange rates")
+        }
+    }
+
+    func getDirectExchangeRate(from: String, to: String) -> Double? {
+        let key = "\(from)_to_\(to)"
+        return directExchangeRates[key]?.rate
+    }
+
+    func saveDirectExchangeRate(from: String, to: String, rate: Double) async throws {
+        print("💾 Saving direct exchange rate: 1 \(from) = \(rate) \(to)")
+        
+        let directRate = DirectExchangeRate(fromCurrency: from, toCurrency: to, rate: rate)
+        let docRef = db.collection("DirectExchangeRates").document(directRate.id!)
+        
+        try await docRef.setData(directRate.toDictionary())
+        print("✅ Direct exchange rate saved successfully")
+    }
+
+    func requiresDirectRate(givingCurrency: Currency, receivingCurrency: Currency) -> Bool {
+        // Check if both currencies are non-CAD
+        let bothNonCAD = givingCurrency.name != "CAD" && receivingCurrency.name != "CAD"
+        
+        if bothNonCAD {
+            // Check if we already have this direct rate
+            let directRate = getDirectExchangeRate(from: givingCurrency.name, to: receivingCurrency.name)
+            return directRate == nil // Return true if we DON'T have the rate
+        }
+        
+        return false // CAD is involved, use existing logic
+    }
+    
+    struct DirectExchangeRate: Identifiable, Codable {
+        var id: String?
+        var fromCurrency: String
+        var toCurrency: String
+        var rate: Double
+        var createdAt: Timestamp?
+        var updatedAt: Timestamp?
+        
+        init(fromCurrency: String, toCurrency: String, rate: Double) {
+            self.id = "\(fromCurrency)_to_\(toCurrency)"
+            self.fromCurrency = fromCurrency
+            self.toCurrency = toCurrency
+            self.rate = rate
+            self.createdAt = Timestamp()
+            self.updatedAt = Timestamp()
+        }
+        
+        func toDictionary() -> [String: Any] {
+            return [
+                "fromCurrency": fromCurrency,
+                "toCurrency": toCurrency,
+                "rate": rate,
+                "createdAt": createdAt ?? Timestamp(),
+                "updatedAt": Timestamp()
+            ]
+        }
     }
     
     // Computed property to get all currencies including CAD
@@ -185,5 +299,6 @@ class CurrencyManager: ObservableObject {
     
     deinit {
         currenciesListener?.remove()
+        directRatesListener?.remove() // Add this line
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import FirebaseFirestore
+import Combine
 
 // Protocol for mixed transaction display
 protocol MixedTransaction {
@@ -29,8 +30,8 @@ extension PurchaseTransaction: MixedTransaction {
     var transactionType: TransactionType { .purchase }
 }
 
-// Wrapper for mixed transactions
-struct AnyMixedTransaction: Identifiable {
+// Wrapper for mixed transactions - now conforms to Equatable
+struct AnyMixedTransaction: Identifiable, Equatable {
     let id: String
     let timestamp: Timestamp
     let transactionType: TransactionType
@@ -50,6 +51,14 @@ struct AnyMixedTransaction: Identifiable {
     var purchaseTransaction: PurchaseTransaction? {
         return transaction as? PurchaseTransaction
     }
+    
+    // Equatable conformance
+    static func == (lhs: AnyMixedTransaction, rhs: AnyMixedTransaction) -> Bool {
+        // Compare by id and timestamp as primary identifiers
+        return lhs.id == rhs.id &&
+               lhs.timestamp.dateValue() == rhs.timestamp.dateValue() &&
+               lhs.transactionType == rhs.transactionType
+    }
 }
 
 class MixedTransactionManager: ObservableObject {
@@ -61,6 +70,8 @@ class MixedTransactionManager: ObservableObject {
     private let salesManager = SalesTransactionManager.shared
     private let purchaseManager = PurchaseTransactionManager.shared
     
+    private var cancellables = Set<AnyCancellable>()
+    
     private init() {
         // Observe changes from all three managers
         currencyManager.$transactions
@@ -70,8 +81,6 @@ class MixedTransactionManager: ObservableObject {
             }
             .store(in: &cancellables)
     }
-    
-    private var cancellables = Set<AnyCancellable>()
     
     private func combinedTransactions(currency: [CurrencyTransaction], sales: [SalesTransaction], purchase: [PurchaseTransaction]) {
         var combined: [AnyMixedTransaction] = []
@@ -129,6 +138,3 @@ class MixedTransactionManager: ObservableObject {
         return filteredTransactions
     }
 }
-
-// Add this import at the top
-import Combine

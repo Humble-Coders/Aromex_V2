@@ -4,6 +4,52 @@ import AppKit
 #endif
 import FirebaseFirestore
 
+// Add these enums at the top of the file
+enum TransactionFilter: String, CaseIterable {
+    case normalCash = "Normal Cash"
+    case currencyExchange = "Currency Exchange"
+    case sales = "Sales"
+    case purchases = "Purchases"
+    
+    var icon: String {
+        switch self {
+        case .normalCash: return "arrow.left.arrow.right"
+        case .currencyExchange: return "arrow.triangle.2.circlepath"
+        case .sales: return "cart.fill"
+        case .purchases: return "shippingbox.fill"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .normalCash: return .blue
+        case .currencyExchange: return .orange
+        case .sales: return .purple
+        case .purchases: return .green
+        }
+    }
+}
+
+enum DateFilter: String, CaseIterable {
+    case all = "All Time"
+    case today = "Today"
+    case week = "This Week"
+    case month = "This Month"
+    case year = "This Year"
+    case custom = "Custom Range"
+    
+    var icon: String {
+        switch self {
+        case .all: return "infinity"
+        case .today: return "calendar"
+        case .week: return "calendar.badge.clock"
+        case .month: return "calendar.badge.plus"
+        case .year: return "calendar.circle"
+        case .custom: return "calendar.badge.exclamationmark"
+        }
+    }
+}
+
 // Color extension for cross-platform compatibility
 extension Color {
     static var systemBackground: Color {
@@ -181,35 +227,188 @@ struct AddEntryView: View {
     @StateObject private var salesTransactionManager = SalesTransactionManager.shared
     @StateObject private var mixedTransactionManager = MixedTransactionManager.shared
     
-    @State private var selectedTransactionTypes: Set<TransactionFilterType> = [.normalCash, .exchange]
-    @State private var searchText: String = ""
-    @State private var sortOption: SortOption = .newestFirst
+    @State private var transactionSearchText = ""
+    @State private var selectedTransactionFilters: Set<TransactionFilter> = [.normalCash, .currencyExchange] // Default: both cash types
+    @State private var selectedDateFilter: DateFilter = .all
+    @State private var customStartDate = Date()
+    @State private var customEndDate = Date()
+    @State private var filteredMixedTransactions: [AnyMixedTransaction] = []
+    
+    @State private var showingProfitBreakdown: Bool = false
+    @State private var totalProfitInUSD: Double = 0.0
 
-    enum TransactionFilterType: String, CaseIterable, Identifiable {
-        case normalCash = "Normal Cash"
-        case exchange = "Exchange"
-        case purchase = "Purchase"
-        case sales = "Sales"
-        
-        var id: String { self.rawValue }
-        
-        var icon: String {
-            switch self {
-            case .normalCash: return "dollarsign.circle"
-            case .exchange: return "arrow.triangle.2.circlepath"
-            case .purchase: return "cart.fill"
-            case .sales: return "bag.fill"
+    private var hasActiveFilters: Bool {
+        return !transactionSearchText.isEmpty ||
+               selectedTransactionFilters.count != 2 || // Not default (normalCash + currencyExchange)
+               !selectedTransactionFilters.contains(.normalCash) ||
+               !selectedTransactionFilters.contains(.currencyExchange) ||
+               selectedDateFilter != .all
+    }
+
+    private var customDateRangeView: some View {
+        VStack(spacing: 12) {
+            Text("Custom Date Range")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.primary)
+            
+            if shouldUseVerticalLayout {
+                VStack(spacing: 8) {
+                    DatePicker("From", selection: $customStartDate, displayedComponents: .date)
+                        .datePickerStyle(CompactDatePickerStyle())
+                        .onChange(of: customStartDate) { _ in applyTransactionFilters() }
+                    
+                    DatePicker("To", selection: $customEndDate, displayedComponents: .date)
+                        .datePickerStyle(CompactDatePickerStyle())
+                        .onChange(of: customEndDate) { _ in applyTransactionFilters() }
+                }
+            } else {
+                HStack(spacing: 16) {
+                    DatePicker("From", selection: $customStartDate, displayedComponents: .date)
+                        .datePickerStyle(CompactDatePickerStyle())
+                        .onChange(of: customStartDate) { _ in applyTransactionFilters() }
+                    
+                    DatePicker("To", selection: $customEndDate, displayedComponents: .date)
+                        .datePickerStyle(CompactDatePickerStyle())
+                        .onChange(of: customEndDate) { _ in applyTransactionFilters() }
+                }
             }
         }
+        .padding(.top, 8)
     }
 
-    enum SortOption: String, CaseIterable {
-        case newestFirst = "Newest First"
-        case oldestFirst = "Oldest First"
-        case amountHighToLow = "Amount (High to Low)"
-        case amountLowToHigh = "Amount (Low to High)"
+    // Add these methods to AddEntryView
+    private func toggleTransactionFilter(_ filter: TransactionFilter) {
+        if selectedTransactionFilters.contains(filter) {
+            selectedTransactionFilters.remove(filter)
+        } else {
+            selectedTransactionFilters.insert(filter)
+        }
+        applyTransactionFilters()
     }
 
+    private func clearAllFilters() {
+        transactionSearchText = ""
+        selectedTransactionFilters = [.normalCash, .currencyExchange] // Reset to default
+        selectedDateFilter = .all
+        applyTransactionFilters()
+    }
+
+    private func applyTransactionFilters() {
+        var filtered = mixedTransactionManager.mixedTransactions
+        
+        // Apply transaction type filters
+        filtered = filtered.filter { transaction in
+            switch transaction.transactionType {
+            case .currency:
+                if let currencyTx = transaction.currencyTransaction {
+                    if currencyTx.isExchange {
+                        return selectedTransactionFilters.contains(.currencyExchange)
+                    } else {
+                        return selectedTransactionFilters.contains(.normalCash)
+                    }
+                }
+                return false
+            case .sales:
+                return selectedTransactionFilters.contains(.sales)
+            case .purchase:
+                return selectedTransactionFilters.contains(.purchases)
+            }
+        }
+        
+        // Apply search filter
+        if !transactionSearchText.isEmpty {
+            filtered = filtered.filter { transaction in
+                let searchLower = transactionSearchText.lowercased()
+                
+                switch transaction.transactionType {
+                case .currency:
+                    if let currencyTx = transaction.currencyTransaction {
+                        return currencyTx.giverName.lowercased().contains(searchLower) ||
+                               currencyTx.takerName.lowercased().contains(searchLower) ||
+                               currencyTx.notes.lowercased().contains(searchLower) ||
+                               "\(currencyTx.amount)".contains(searchLower) ||
+                               currencyTx.currencyName.lowercased().contains(searchLower)
+                    }
+                case .sales:
+                    if let salesTx = transaction.transaction as? SalesTransaction {
+                        return salesTx.customerName.lowercased().contains(searchLower) ||
+                               (salesTx.supplierName?.lowercased().contains(searchLower) ?? false) ||
+                               "\(salesTx.amount)".contains(searchLower) ||
+                               "\(salesTx.total)".contains(searchLower) ||
+                               (salesTx.orderNumber?.lowercased().contains(searchLower) ?? false)
+                    }
+                case .purchase:
+                    if let purchaseTx = transaction.purchaseTransaction {
+                        return purchaseTx.supplierName.lowercased().contains(searchLower) ||
+                               "\(purchaseTx.amount)".contains(searchLower) ||
+                               "\(purchaseTx.total)".contains(searchLower) ||
+                               (purchaseTx.orderNumber?.lowercased().contains(searchLower) ?? false)
+                    }
+                }
+                return false
+            }
+        }
+        
+        // Apply date filter
+        if selectedDateFilter != .all {
+            filtered = filtered.filter { transaction in
+                let transactionDate = transaction.timestamp.dateValue()
+                let calendar = Calendar.current
+                let now = Date()
+                
+                switch selectedDateFilter {
+                case .today:
+                    return calendar.isDate(transactionDate, inSameDayAs: now)
+                case .week:
+                    return calendar.dateInterval(of: .weekOfYear, for: now)?.contains(transactionDate) ?? false
+                case .month:
+                    return calendar.dateInterval(of: .month, for: now)?.contains(transactionDate) ?? false
+                case .year:
+                    return calendar.dateInterval(of: .year, for: now)?.contains(transactionDate) ?? false
+                case .custom:
+                    let startOfCustomStart = calendar.startOfDay(for: customStartDate)
+                    let endOfCustomEnd = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: customEndDate)) ?? customEndDate
+                    return transactionDate >= startOfCustomStart && transactionDate < endOfCustomEnd
+                case .all:
+                    return true
+                }
+            }
+        }
+        
+        filteredMixedTransactions = filtered
+    }
+
+    // Add the TransactionFilterButton component
+    struct TransactionFilterButton: View {
+        let filter: TransactionFilter
+        let isSelected: Bool
+        let action: () -> Void
+        
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: 6) {
+                    Image(systemName: filter.icon)
+                        .font(.system(size: 12, weight: .medium))
+                    
+                    Text(filter.rawValue)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundColor(isSelected ? .white : filter.color)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isSelected ? filter.color : filter.color.opacity(0.1))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(filter.color.opacity(0.3), lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+    }
+    
     enum ProfitTimeframe: String, CaseIterable {
         case day = "Day"
         case week = "Week"
@@ -225,96 +424,6 @@ struct AddEntryView: View {
             case .year: return "calendar.circle"
             case .all: return "infinity"
             }
-        }
-    }
-    
-    private var filteredMixedTransactions: [AnyMixedTransaction] {
-        var transactions = mixedTransactionManager.mixedTransactions
-        
-        // Filter by type
-        if !selectedTransactionTypes.isEmpty {
-            transactions = transactions.filter { transaction in
-                switch transaction.transactionType {
-                case .currency:
-                    guard let currencyTx = transaction.currencyTransaction else { return false }
-                    
-                    if currencyTx.isExchange {
-                        return selectedTransactionTypes.contains(.exchange)
-                    } else {
-                        return selectedTransactionTypes.contains(.normalCash)
-                    }
-                    
-                case .sales:
-                    return selectedTransactionTypes.contains(.sales)
-                    
-                case .purchase:
-                    return selectedTransactionTypes.contains(.purchase)
-                }
-            }
-        }
-        
-        // Filter by search text
-        if !searchText.isEmpty {
-            let searchLowercased = searchText.lowercased()
-            transactions = transactions.filter { transaction in
-                switch transaction.transactionType {
-                case .currency:
-                    if let t = transaction.currencyTransaction {
-                        return t.giverName.lowercased().contains(searchLowercased) ||
-                            t.takerName.lowercased().contains(searchLowercased) ||
-                            t.currencyName.lowercased().contains(searchLowercased) ||
-                            String(t.amount).contains(searchLowercased) ||
-                            (t.receivingCurrencyName?.lowercased().contains(searchLowercased) ?? false) ||
-                            (String(t.receivedAmount ?? 0).contains(searchLowercased)) ||
-                            t.notes.lowercased().contains(searchLowercased)
-                    }
-                    return false
-                case .sales:
-                    if let t = transaction.transaction as? SalesTransaction {
-                        return t.customerName.lowercased().contains(searchLowercased) ||
-                            String(t.amount).contains(searchLowercased)
-                    }
-                    return false
-                case .purchase:
-                    if let t = transaction.purchaseTransaction {
-                        return t.supplierName.lowercased().contains(searchLowercased) ||
-                            String(t.amount).contains(searchLowercased)
-                            
-                    }
-                    return false
-                }
-            }
-        }
-        
-        // Sort transactions
-        switch sortOption {
-        case .newestFirst:
-            return transactions.sorted { $0.timestamp.dateValue() > $1.timestamp.dateValue() }
-        case .oldestFirst:
-            return transactions.sorted { $0.timestamp.dateValue() < $1.timestamp.dateValue() }
-        case .amountHighToLow:
-            return transactions.sorted {
-                let amount1 = getAmount(for: $0)
-                let amount2 = getAmount(for: $1)
-                return amount1 > amount2
-            }
-        case .amountLowToHigh:
-            return transactions.sorted {
-                let amount1 = getAmount(for: $0)
-                let amount2 = getAmount(for: $1)
-                return amount1 < amount2
-            }
-        }
-    }
-    
-    private func getAmount(for transaction: AnyMixedTransaction) -> Double {
-        switch transaction.transactionType {
-        case .currency:
-            return transaction.currencyTransaction?.amount ?? 0
-        case .sales:
-            return (transaction.transaction as? SalesTransaction)?.amount ?? 0
-        case .purchase:
-            return transaction.purchaseTransaction?.amount ?? 0
         }
     }
     
@@ -517,6 +626,7 @@ struct AddEntryView: View {
             transactionManager.fetchTransactions()
             salesTransactionManager.fetchSalesTransactions()
             refreshEntireScreen()
+            applyTransactionFilters()
         }
         .onChange(of: selectedFromDropdownOpen) { isOpen in
             isFromFieldFocused = isOpen
@@ -564,6 +674,13 @@ struct AddEntryView: View {
         .sheet(isPresented: $showingExchangeRatesDialog) {
             ExchangeRatesDialog()
                 .environmentObject(currencyManager)
+        }
+        .onChange(of: mixedTransactionManager.mixedTransactions) { _ in
+            applyTransactionFilters()
+        }
+        // Add this to monitor transaction changes
+        .onReceive(mixedTransactionManager.$mixedTransactions) { _ in
+            applyTransactionFilters()
         }
     }
     
@@ -723,176 +840,292 @@ struct AddEntryView: View {
     }
     
     private var allTransactionsSection: some View {
-        VStack(spacing: 16) {
-            // Section Header
-            HStack {
-                HStack(spacing: 16) {
-                    Image(systemName: "doc.text.fill")
-                        .font(shouldUseVerticalLayout ? .title2 : .title)
-                        .foregroundColor(.blue)
-                    
-                    Text("All Transactions")
-                        .font(shouldUseVerticalLayout ? .title2 : .title)
-                        .fontWeight(.semibold)
-                        .foregroundColor(.primary)
-                }
-                
-                Spacer()
-                
-                if !mixedTransactionManager.mixedTransactions.isEmpty {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(filteredMixedTransactions.count) of \(mixedTransactionManager.mixedTransactions.count)")
-                            .font(.callout)
-                            .foregroundColor(.secondary)
+        VStack(spacing: 24) {
+            // Section Header with Search and Filters
+            VStack(spacing: 16) {
+                // Title Row
+                HStack {
+                    HStack(spacing: 16) {
+                        Image(systemName: "doc.text.fill")
+                            .font(shouldUseVerticalLayout ? .title2 : .title)
+                            .foregroundColor(.blue)
                         
-                        HStack(spacing: 8) {
-                            let currencyCount = mixedTransactionManager.mixedTransactions.filter { $0.transactionType == .currency }.count
-                            let salesCount = mixedTransactionManager.mixedTransactions.filter { $0.transactionType == .sales }.count
-                            
-                            Text("\(currencyCount) currency")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                            
-                            Text("•")
-                                .font(.caption)
+                        Text("All Transactions")
+                            .font(shouldUseVerticalLayout ? .title2 : .title)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
+                    }
+                    
+                    Spacer()
+                    
+                    if !filteredMixedTransactions.isEmpty {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(filteredMixedTransactions.count) transactions")
+                                .font(.callout)
                                 .foregroundColor(.secondary)
                             
-                            Text("\(salesCount) sales")
-                                .font(.caption)
-                                .foregroundColor(.purple)
+                            HStack(spacing: 8) {
+                                let currencyCount = filteredMixedTransactions.filter { $0.transactionType == .currency }.count
+                                let salesCount = filteredMixedTransactions.filter { $0.transactionType == .sales }.count
+                                let purchaseCount = filteredMixedTransactions.filter { $0.transactionType == .purchase }.count
+                                
+                                if currencyCount > 0 {
+                                    Text("\(currencyCount) currency")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                }
+                                
+                                if currencyCount > 0 && (salesCount > 0 || purchaseCount > 0) {
+                                    Text("•")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                if salesCount > 0 {
+                                    Text("\(salesCount) sales")
+                                        .font(.caption)
+                                        .foregroundColor(.purple)
+                                }
+                                
+                                if salesCount > 0 && purchaseCount > 0 {
+                                    Text("•")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                if purchaseCount > 0 {
+                                    Text("\(purchaseCount) purchases")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                }
+                            }
                         }
                     }
                 }
-            }
-            
-            // Search and Filter Bar
-            VStack(spacing: 12) {
+                
                 // Search Bar
-                HStack {
+                HStack(spacing: 12) {
                     Image(systemName: "magnifyingglass")
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.secondary)
                     
-                    TextField("Search transactions...", text: $searchText)
+                    TextField("Search by name, amount, or notes...", text: $transactionSearchText)
+                        .font(.system(size: 16, weight: .medium))
                         .textFieldStyle(PlainTextFieldStyle())
-                        .font(.body)
+                        .onChange(of: transactionSearchText) { _ in
+                            applyTransactionFilters()
+                        }
                     
-                    if !searchText.isEmpty {
-                        Button(action: { searchText = "" }) {
+                    if !transactionSearchText.isEmpty {
+                        Button(action: {
+                            transactionSearchText = ""
+                            applyTransactionFilters()
+                        }) {
                             Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 16))
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(PlainButtonStyle())
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.systemGray6)
-                .cornerRadius(10)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.systemGray6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                        )
+                )
                 
-                // Filter and Sort Controls
-                HStack(spacing: 12) {
-                    // Type Filter
-                    Menu {
-                        ForEach(TransactionFilterType.allCases) { type in
-                            Button(action: {
-                                if selectedTransactionTypes.contains(type) {
-                                    selectedTransactionTypes.remove(type)
-                                } else {
-                                    selectedTransactionTypes.insert(type)
+                // Filter Controls
+                VStack(spacing: 16) {
+                    // Transaction Type Filters
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Transaction Types")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.primary)
+                        
+                        if shouldUseVerticalLayout {
+                            // Vertical layout for compact screens
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    ForEach(Array(TransactionFilter.allCases.prefix(2)), id: \.self) { filter in
+                                        TransactionFilterButton(
+                                            filter: filter,
+                                            isSelected: selectedTransactionFilters.contains(filter),
+                                            action: { toggleTransactionFilter(filter) }
+                                        )
+                                    }
                                 }
-                            }) {
-                                HStack {
-                                    Image(systemName: type.icon)
-                                    Text(type.rawValue)
-                                    if selectedTransactionTypes.contains(type) {
-                                        Image(systemName: "checkmark")
+                                
+                                HStack(spacing: 8) {
+                                    ForEach(Array(TransactionFilter.allCases.suffix(2)), id: \.self) { filter in
+                                        TransactionFilterButton(
+                                            filter: filter,
+                                            isSelected: selectedTransactionFilters.contains(filter),
+                                            action: { toggleTransactionFilter(filter) }
+                                        )
                                     }
                                 }
                             }
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                                .font(.callout)
-                            Text("Filter")
-                                .font(.callout)
-                            Text("(\(selectedTransactionTypes.count))")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.systemGray5)
-                        .cornerRadius(8)
-                    }
-                    
-                    // Sort Options
-                    Menu {
-                        ForEach(SortOption.allCases, id: \.self) { option in
-                            Button(action: { sortOption = option }) {
-                                HStack {
-                                    Text(option.rawValue)
-                                    if sortOption == option {
-                                        Image(systemName: "checkmark")
-                                    }
+                        } else {
+                            // Horizontal layout for larger screens
+                            HStack(spacing: 8) {
+                                ForEach(TransactionFilter.allCases, id: \.self) { filter in
+                                    TransactionFilterButton(
+                                        filter: filter,
+                                        isSelected: selectedTransactionFilters.contains(filter),
+                                        action: { toggleTransactionFilter(filter) }
+                                    )
                                 }
                             }
                         }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.up.arrow.down.circle")
-                                .font(.callout)
-                            Text("Sort: \(sortOption.rawValue)")
-                                .font(.callout)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(Color.systemGray5)
-                        .cornerRadius(8)
                     }
                     
-                    Spacer()
+                    // Date Filter
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Date Range")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.primary)
+                            
+                            Picker("Date Filter", selection: $selectedDateFilter) {
+                                ForEach(DateFilter.allCases, id: \.self) { filter in
+                                    HStack {
+                                        Image(systemName: filter.icon)
+                                        Text(filter.rawValue)
+                                    }
+                                    .tag(filter)
+                                }
+                            }
+                            .pickerStyle(MenuPickerStyle())
+                            .frame(maxWidth: shouldUseVerticalLayout ? .infinity : 200)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(Color.systemGray6)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                    )
+                            )
+                            .onChange(of: selectedDateFilter) { _ in
+                                applyTransactionFilters()
+                            }
+                        }
+                        
+                        if !shouldUseVerticalLayout {
+                            Spacer()
+                            
+                            // Clear All Filters Button
+                            Button(action: clearAllFilters) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 14))
+                                    Text("Clear All")
+                                        .font(.system(size: 14, weight: .semibold))
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .background(Color.red)
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    
+                    // Clear All button for vertical layout
+                    if shouldUseVerticalLayout {
+                        Button(action: clearAllFilters) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 14))
+                                Text("Clear All Filters")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(Color.red)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    
+                    // Custom Date Range (if selected)
+                    if selectedDateFilter == .custom {
+                        customDateRangeView
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.systemGray6.opacity(0.5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                        )
+                )
             }
+            .padding(.horizontal, horizontalPadding)
             
             // Transactions List
-            if transactionManager.isLoading || salesTransactionManager.isLoading {
-                HStack {
-                    ProgressView()
-                        .scaleEffect(1.2)
-                    Text("Loading transactions...")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                }
-                .padding(.vertical, 40)
-            } else if filteredMixedTransactions.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 40))
-                        .foregroundColor(.gray)
-                    Text(selectedTransactionTypes.isEmpty ? "No transaction types selected" : "No matching transactions")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
-                    Text(selectedTransactionTypes.isEmpty ?
-                         "Select at least one transaction type to view" :
-                         "Try changing your search or filter criteria")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(.vertical, 40)
-            } else {
-                LazyVStack(spacing: 12) {
-                    ForEach(filteredMixedTransactions) { mixedTransaction in
-                        MixedTransactionView(mixedTransaction: mixedTransaction)
-                            .frame(maxWidth: .infinity)
+            VStack(spacing: 16) {
+                if transactionManager.isLoading || salesTransactionManager.isLoading {
+                    HStack {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                        Text("Loading transactions...")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 40)
+                } else if filteredMixedTransactions.isEmpty {
+                    VStack(spacing: 16) {
+                        Image(systemName: hasActiveFilters ? "doc.text.magnifyingglass" : "doc.text")
+                            .font(.system(size: 40))
+                            .foregroundColor(.gray)
+                        
+                        Text(hasActiveFilters ? "No transactions match your filters" : "No transactions yet")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                        
+                        Text(hasActiveFilters ? "Try adjusting your search or filter criteria" : "Start by adding your first transaction above")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        if hasActiveFilters {
+                            Button(action: clearAllFilters) {
+                                Text("Clear All Filters")
+                                    .font(.body)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(Color.blue)
+                                    .cornerRadius(8)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    .padding(.vertical, 40)
+                } else {
+                    LazyVStack(spacing: 12) {
+                        ForEach(filteredMixedTransactions) { mixedTransaction in
+                            MixedTransactionView(mixedTransaction: mixedTransaction)
+                                .frame(maxWidth: .infinity)
+                        }
                     }
                 }
             }
+            .padding(.horizontal, horizontalPadding)
         }
-        .padding(.horizontal, horizontalPadding)
     }
     private var horizontalTransactionForm: some View {
         VStack(spacing: 32) {
@@ -1737,7 +1970,7 @@ struct AddEntryView: View {
     }
     
     private var totalExchangeProfitBarHorizontal: some View {
-        Button(action: {}) {
+        Button(action: { showingProfitBreakdown.toggle() }) {
             HStack(spacing: 8) {
                 Image(systemName: "chart.line.uptrend.xyaxis")
                     .font(.body)
@@ -1779,40 +2012,32 @@ struct AddEntryView: View {
                     .cornerRadius(4)
                 }
                 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(Array(totalExchangeProfit.keys.sorted()), id: \.self) { currency in
-                            if let profit = totalExchangeProfit[currency], abs(profit) >= 0.01 {
-                                HStack(spacing: 3) {
-                                    Text(profit > 0 ? "+" : "")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundColor(profit > 0 ? .green : .red)
-                                    Text("\(profit, specifier: "%.2f")")
-                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                        .foregroundColor(profit > 0 ? .green : .red)
-                                    Text(currency)
-                                        .font(.system(size: 10, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.8))
-                                }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background((profit > 0 ? Color.green : Color.red).opacity(0.15))
-                                .cornerRadius(4)
-                            }
-                        }
-                        
-                        if totalExchangeProfit.isEmpty || totalExchangeProfit.values.allSatisfy({ abs($0) < 0.01 }) {
-                            Text("No profit (\(selectedProfitTimeframe.rawValue.lowercased()))")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(4)
-                        }
+                // Single USD converted profit display
+                HStack(spacing: 3) {
+                    if totalProfitInUSD != 0 {
+                        Text(totalProfitInUSD > 0 ? "+" : "")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(totalProfitInUSD > 0 ? .green : .red)
+                        Text("$\(abs(totalProfitInUSD), specifier: "%.2f")")
+                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .foregroundColor(totalProfitInUSD > 0 ? .green : .red)
+                        Text("CAD")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
+                    } else {
+                        Text("No profit (\(selectedProfitTimeframe.rawValue.lowercased()))")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
                     }
                 }
-                .frame(maxWidth: 300) // Limit the width similar to rates section
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background((totalProfitInUSD > 0 ? Color.green : (totalProfitInUSD < 0 ? Color.red : Color.white)).opacity(0.15))
+                .cornerRadius(4)
+                
+                Image(systemName: "info.circle")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.8))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -1820,10 +2045,18 @@ struct AddEntryView: View {
             .cornerRadius(8)
         }
         .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingProfitBreakdown) {
+            ProfitBreakdownDialog(
+                totalExchangeProfit: totalExchangeProfit,
+                totalProfitInUSD: totalProfitInUSD,
+                timeframe: selectedProfitTimeframe,
+                currencyManager: currencyManager
+            )
+        }
     }
 
     private var totalExchangeProfitBarVertical: some View {
-        Button(action: {}) {
+        Button(action: { showingProfitBreakdown.toggle() }) {
             VStack(spacing: 6) {
                 HStack(spacing: 6) {
                     Image(systemName: "chart.line.uptrend.xyaxis")
@@ -1865,38 +2098,31 @@ struct AddEntryView: View {
                         .background(Color.white.opacity(0.15))
                         .cornerRadius(3)
                     }
+                    
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 8))
+                        .foregroundColor(.white.opacity(0.8))
                 }
                 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 5) {
-                        ForEach(Array(totalExchangeProfit.keys.sorted()), id: \.self) { currency in
-                            if let profit = totalExchangeProfit[currency], abs(profit) >= 0.01 {
-                                VStack(spacing: 1) {
-                                    Text(currency)
-                                        .font(.system(size: 8, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.8))
-                                    Text("\(profit > 0 ? "+" : "")\(profit, specifier: "%.1f")")
-                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                        .foregroundColor(profit > 0 ? .green : .red)
-                                }
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 2)
-                                .background((profit > 0 ? Color.green : Color.red).opacity(0.15))
-                                .cornerRadius(3)
-                            }
-                        }
-                        
-                        if totalExchangeProfit.isEmpty || totalExchangeProfit.values.allSatisfy({ abs($0) < 0.01 }) {
-                            Text("No profit")
-                                .font(.system(size: 9, weight: .medium))
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(3)
-                        }
+                // Single USD converted profit display
+                VStack(spacing: 2) {
+                    if totalProfitInUSD != 0 {
+                        Text("CAD")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
+                        Text("\(totalProfitInUSD > 0 ? "+" : "")\(totalProfitInUSD, specifier: "%.1f")")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(totalProfitInUSD > 0 ? .green : .red)
+                    } else {
+                        Text("No profit")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
                     }
                 }
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background((totalProfitInUSD > 0 ? Color.green : (totalProfitInUSD < 0 ? Color.red : Color.white)).opacity(0.15))
+                .cornerRadius(3)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -1904,10 +2130,19 @@ struct AddEntryView: View {
             .cornerRadius(6)
         }
         .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingProfitBreakdown) {
+            ProfitBreakdownDialog(
+                totalExchangeProfit: totalExchangeProfit,
+                totalProfitInUSD: totalProfitInUSD,
+                timeframe: selectedProfitTimeframe,
+                currencyManager: currencyManager
+            )
+        }
     }
 
     private func calculateTotalExchangeProfit() {
         var profitByCurrency: [String: Double] = [:]
+        var totalUSDProfit: Double = 0.0
         
         // Filter transactions by timeframe
         let filteredTransactions = transactionManager.transactions.filter { transaction in
@@ -1957,10 +2192,16 @@ struct AddEntryView: View {
             
             // Add to total for this currency
             profitByCurrency[receivingCurrencyName] = (profitByCurrency[receivingCurrencyName] ?? 0) + transactionProfit
+            
+            // Convert profit to USD using market rate
+            let profitInUSD = transactionProfit / receivingRate
+            totalUSDProfit += profitInUSD
         }
         
         totalExchangeProfit = profitByCurrency
+        totalProfitInUSD = totalUSDProfit
         print("💰 Total Exchange Profit (\(selectedProfitTimeframe.rawValue)): \(profitByCurrency)")
+        print("💵 Total Profit in CAD: $\(totalUSDProfit)")
     }
     private func clearForm() {
         selectedFromCustomer = nil
@@ -2657,6 +2898,7 @@ struct TransactionRowView: View {
                         }
                         
                         // Current Profit Display with Dynamic Calculation
+                        // Current Profit Display with Dynamic Calculation and USD Conversion
                         if let profit = dynamicProfitData?.profit,
                            let profitCurrency = dynamicProfitData?.currency {
                             VStack(alignment: .leading, spacing: 4) {
@@ -2675,6 +2917,27 @@ struct TransactionRowView: View {
                                 .background((profit > 0 ? Color.green : (profit < 0 ? Color.red : Color.gray)).opacity(0.08))
                                 .cornerRadius(6)
                                 
+                                // USD Conversion
+                                if let receivingCurrency = currencyManager.allCurrencies.first(where: { $0.name == transaction.receivingCurrencyName }) {
+                                    let profitInUSD = profit / receivingCurrency.exchangeRate
+                                    
+                                    HStack(spacing: 4) {
+                                        Text("≈")
+                                            .font(.system(size: 8, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                        Text("\(profitInUSD > 0 ? "+" : "")$\(abs(profitInUSD), specifier: "%.2f")")
+                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                            .foregroundColor(profitInUSD > 0 ? .green.opacity(0.8) : (profitInUSD < 0 ? .red.opacity(0.8) : .gray))
+                                        Text("CAD")
+                                            .font(.system(size: 8, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.gray.opacity(0.05))
+                                    .cornerRadius(4)
+                                }
+                                
                                 // Profit percentage
                                 if let customRate = transaction.customExchangeRate,
                                    let givingCurrency = currencyManager.allCurrencies.first(where: { $0.name == transaction.currencyName }),
@@ -2684,9 +2947,6 @@ struct TransactionRowView: View {
                                     let profitPercentage = ((customRate - currentMarketRate) / currentMarketRate) * 100
                                     
                                     HStack(spacing: 4) {
-                                        Text("Profit %:")
-                                            .font(.system(size: 8, weight: .medium))
-                                            .foregroundColor(.secondary)
                                         Text("\(profitPercentage > 0 ? "+" : "")\(profitPercentage, specifier: "%.2f")%")
                                             .font(.system(size: 9, weight: .bold, design: .monospaced))
                                             .foregroundColor(profitPercentage > 0 ? .green.opacity(0.8) : (profitPercentage < 0 ? .red.opacity(0.8) : .gray))
