@@ -34,6 +34,9 @@ struct BalanceReportView: View {
     @State private var showingFilters = false
     @State private var sortBy: SortOption = .name
     @State private var sortAscending = true
+    @State private var totalOwe: [String: Double] = [:]
+    @State private var totalDue: [String: Double] = [:]
+    @State private var myCash: [String: Double] = [:]
     
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
     
@@ -83,6 +86,8 @@ struct BalanceReportView: View {
         .onAppear {
             currencyManager.fetchCurrencies()
             fetchAllBalances()
+            fetchTotalOweDue()
+            fetchMyCash()
         }
         .onChange(of: searchText) { _ in
             applyFilters()
@@ -120,7 +125,11 @@ struct BalanceReportView: View {
                 
                 Spacer()
                 
-                Button(action: fetchAllBalances) {
+                Button(action: {
+                    fetchAllBalances()
+                    fetchTotalOweDue()
+                    fetchMyCash()
+                }) {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 16, weight: .medium))
@@ -145,6 +154,9 @@ struct BalanceReportView: View {
                 .disabled(isLoading)
                 .buttonStyle(PlainButtonStyle())
             }
+            
+            // Total Owe/Due Summary
+            totalOweDueSummary
             
             // Search and Filter Controls
             VStack(spacing: 16) {
@@ -218,6 +230,172 @@ struct BalanceReportView: View {
         )
         .padding(.horizontal, shouldUseVerticalLayout ? 16 : 24)
         .padding(.top, 16)
+    }
+    
+    private var totalOweDueSummary: some View {
+        HStack(spacing: 12) {
+            // Total Owe Section
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.red)
+                    Text("Total I Owe")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.red)
+                }
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(totalOwe.keys.sorted()), id: \.self) { currency in
+                            if let amount = totalOwe[currency], abs(amount) >= 0.01 {
+                                VStack(spacing: 2) {
+                                    Text(currency)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                    Text("\(abs(amount), specifier: "%.2f")")
+                                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.red)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.red.opacity(0.1))
+                                .cornerRadius(6)
+                            }
+                        }
+                        
+                        if totalOwe.isEmpty || totalOwe.values.allSatisfy({ abs($0) < 0.01 }) {
+                            Text("All settled")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.red.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.red.opacity(0.2), lineWidth: 1)
+                    )
+            )
+            
+            // Total Due Section
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.green)
+                    Text("Total Due to Me")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.green)
+                }
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(totalDue.keys.sorted()), id: \.self) { currency in
+                            if let amount = totalDue[currency], abs(amount) >= 0.01 {
+                                VStack(spacing: 2) {
+                                    Text(currency)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                    Text("\(amount, specifier: "%.2f")")
+                                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.green)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.green.opacity(0.1))
+                                .cornerRadius(6)
+                            }
+                        }
+                        
+                        if totalDue.isEmpty || totalDue.values.allSatisfy({ abs($0) < 0.01 }) {
+                            Text("Nothing due")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.green.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                    )
+            )
+            
+            // My Cash Section
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "banknote.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.blue)
+                    Text("My Cash")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.blue)
+                }
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(myCash.keys.sorted()), id: \.self) { currency in
+                            if let amount = myCash[currency], abs(amount) >= 0.01 {
+                                VStack(spacing: 2) {
+                                    Text(currency == "amount" ? "CAD" : currency)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(.secondary)
+                                    Text("\(amount, specifier: "%.2f")")
+                                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.blue)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.blue.opacity(0.1))
+                                .cornerRadius(6)
+                            }
+                        }
+                        
+                        if myCash.isEmpty || myCash.values.allSatisfy({ abs($0) < 0.01 }) {
+                            Text("No cash")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.gray)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.gray.opacity(0.1))
+                                .cornerRadius(6)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.blue.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                    )
+            )
+        }
     }
     
     private var filtersSection: some View {
@@ -587,6 +765,83 @@ struct BalanceReportView: View {
             self.applyFilters()
             self.isLoading = false
             print("✅ Balance report loaded with \(tempBalanceData.count) customers")
+        }
+    }
+    
+    private func fetchTotalOweDue() {
+        let group = DispatchGroup()
+        var tempTotalOwe: [String: Double] = [:]
+        var tempTotalDue: [String: Double] = [:]
+        
+        // Fetch CAD balances from all customer types
+        for customer in firebaseManager.customers {
+            let cadBalance = customer.balance
+            
+            if cadBalance < 0 {
+                // I owe this amount
+                tempTotalOwe["CAD"] = (tempTotalOwe["CAD"] ?? 0) + cadBalance
+            } else if cadBalance > 0 {
+                // This amount is due to me
+                tempTotalDue["CAD"] = (tempTotalDue["CAD"] ?? 0) + cadBalance
+            }
+            
+            // Fetch other currency balances
+            if let customerId = customer.id, !customerId.isEmpty {
+                group.enter()
+                db.collection("CurrencyBalances").document(customerId).getDocument { snapshot, error in
+                    defer { group.leave() }
+                    
+                    if let data = snapshot?.data() {
+                        for (currency, value) in data {
+                            if currency != "updatedAt" && currency != "createdAt",
+                               let balance = value as? Double,
+                               abs(balance) >= 0.01 {
+                                
+                                if balance < 0 {
+                                    // I owe this amount
+                                    tempTotalOwe[currency] = (tempTotalOwe[currency] ?? 0) + balance
+                                } else if balance > 0 {
+                                    // This amount is due to me
+                                    tempTotalDue[currency] = (tempTotalDue[currency] ?? 0) + balance
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            self.totalOwe = tempTotalOwe
+            self.totalDue = tempTotalDue
+            print("💰 Total Owe: \(tempTotalOwe)")
+            print("💰 Total Due: \(tempTotalDue)")
+        }
+    }
+    
+    private func fetchMyCash() {
+        db.collection("Balances").document("Cash").getDocument { snapshot, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("❌ Error fetching my cash: \(error.localizedDescription)")
+                    return
+                }
+                
+                if let data = snapshot?.data() {
+                    var cashBalances: [String: Double] = [:]
+                    
+                    for (key, value) in data {
+                        if key != "updatedAt" && key != "createdAt",
+                           let balance = value as? Double,
+                           abs(balance) >= 0.01 {
+                            cashBalances[key] = balance
+                        }
+                    }
+                    
+                    self.myCash = cashBalances
+                    print("💰 My Cash: \(cashBalances)")
+                }
+            }
         }
     }
     

@@ -142,6 +142,8 @@ struct AddEntryView: View {
     @State private var isProcessingTransaction: Bool = false
     @State private var transactionError: String = ""
     @State private var showTransactionsTab: Bool = false
+    @State private var showingExchangeRatesDialog: Bool = false
+    @State private var totalExchangeProfit: [String: Double] = [:]
     
     // Exchange-specific fields
     @State private var selectedReceivingCurrency: Currency?
@@ -169,6 +171,28 @@ struct AddEntryView: View {
     // Environment to detect size class
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
     @Environment(\.verticalSizeClass) var verticalSizeClass
+    
+    
+    @State private var selectedProfitTimeframe: ProfitTimeframe = .all
+    @State private var showingTimeframeMenu: Bool = false
+    
+    enum ProfitTimeframe: String, CaseIterable {
+        case day = "Day"
+        case week = "Week"
+        case month = "Month"
+        case year = "Year"
+        case all = "All"
+        
+        var icon: String {
+            switch self {
+            case .day: return "calendar"
+            case .week: return "calendar.badge.clock"
+            case .month: return "calendar.badge.plus"
+            case .year: return "calendar.circle"
+            case .all: return "infinity"
+            }
+        }
+    }
     
     // Computed properties for responsive design
     private var isCompact: Bool {
@@ -367,6 +391,8 @@ struct AddEntryView: View {
             isAmountFieldFocused = false
             currencyManager.fetchCurrencies()
             transactionManager.fetchTransactions()
+            refreshEntireScreen()
+            // Remove the immediate call: calculateTotalExchangeProfit()
         }
         .onChange(of: selectedFromDropdownOpen) { isOpen in
             isFromFieldFocused = isOpen
@@ -411,6 +437,10 @@ struct AddEntryView: View {
             AddCurrencyDialog()
                 .environmentObject(currencyManager)
         }
+        .sheet(isPresented: $showingExchangeRatesDialog) {
+            ExchangeRatesDialog()
+                .environmentObject(currencyManager)
+        }
     }
     
     private var headerView: some View {
@@ -435,47 +465,90 @@ struct AddEntryView: View {
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(.white)
+                        
+                        Spacer()
+                        
+                        // Refresh Button
+                        Button(action: refreshEntireScreen) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.title2)
+                                .foregroundColor(.white)
+                        }
+                        .buttonStyle(PlainButtonStyle())
                     }
                     
                     Text("Transaction Entry")
                         .font(.headline)
                         .foregroundColor(.white.opacity(0.9))
+                    
+                    // Exchange Rates Bar (Vertical)
+                    exchangeRatesBarVertical
+                    
+                    // Total Exchange Profit Bar (Vertical)
+                    totalExchangeProfitBarVertical
                 }
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, 20)
             } else {
-                HStack {
-                    HStack(spacing: 16) {
-                        Image(systemName: "building.2.crop.circle.fill")
-                            .font(.largeTitle)
-                            .foregroundColor(.white)
+                VStack(spacing: 16) {
+                    HStack {
+                        HStack(spacing: 16) {
+                            Image(systemName: "building.2.crop.circle.fill")
+                                .font(.largeTitle)
+                                .foregroundColor(.white)
+                            
+                            Text("AROMEX")
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                        }
                         
-                        Text("AROMEX")
-                            .font(.title)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
+                        Spacer()
+                        
+                        Text("Transaction Entry")
+                            .font(.title2)
+                            .foregroundColor(.white.opacity(0.9))
+                        
+                        Spacer()
+                        
+                        HStack(spacing: 16) {
+                            // Refresh Button
+                            Button(action: refreshEntireScreen) {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.body)
+                                    Text("Refresh")
+                                        .font(.body)
+                                        .fontWeight(.semibold)
+                                }
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(Color.white.opacity(0.2))
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            
+                            Button(action: {}) {
+                                Image(systemName: "person.crop.circle.fill")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
                     }
                     
-                    Spacer()
+                    // Exchange Rates Bar (Horizontal)
+                    exchangeRatesBarHorizontal
                     
-                    Text("Transaction Entry")
-                        .font(.title2)
-                        .foregroundColor(.white.opacity(0.9))
-                    
-                    Spacer()
-                    
-                    Button(action: {}) {
-                        Image(systemName: "person.crop.circle.fill")
-                            .font(.largeTitle)
-                            .foregroundColor(.white.opacity(0.8))
-                    }
-                    .buttonStyle(PlainButtonStyle())
+                    // Total Exchange Profit Bar (Horizontal)
+                    totalExchangeProfitBarHorizontal
                 }
                 .padding(.horizontal, horizontalPadding)
                 .padding(.vertical, 24)
             }
         }
-        .frame(height: shouldUseVerticalLayout ? 120 : 100)
+        .frame(height: shouldUseVerticalLayout ? 240 : 180)
     }
     
     // ADDED: Missing transactionSection
@@ -587,7 +660,6 @@ struct AddEntryView: View {
             .padding(.horizontal, horizontalPadding)
         }
     }
-
     private var horizontalTransactionForm: some View {
         VStack(spacing: 32) {
             // Main Transaction Row - Everything in One Line - CENTERED
@@ -1304,7 +1376,352 @@ struct AddEntryView: View {
             }
         }
     }
+    // Exchange Rates Display Components
+    private var exchangeRatesBarHorizontal: some View {
+        Button(action: { showingExchangeRatesDialog = true }) {
+            HStack(spacing: 8) {
+                Image(systemName: "dollarsign.circle.fill")
+                    .font(.body)
+                    .foregroundColor(.white)
+                
+                Text("Rates:")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(currencyManager.allCurrencies) { currency in
+                            if currency.name != "CAD" {
+                                HStack(spacing: 3) {
+                                    Text("1$ =")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                    Text("\(currency.exchangeRate, specifier: "%.2f")")
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                    Text(currency.name)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                }
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 3)
+                                .background(Color.white.opacity(0.15))
+                                .cornerRadius(4)
+                            }
+                        }
+                        
+                        if currencyManager.allCurrencies.filter({ $0.name != "CAD" }).isEmpty {
+                            Text("No custom currencies")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                    }
+                }
+                .frame(maxWidth: 400)
+                
+                Image(systemName: "pencil.circle.fill")
+                    .font(.callout)
+                    .foregroundColor(.white.opacity(0.8))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.1))
+            .cornerRadius(8)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+
+    private var exchangeRatesBarVertical: some View {
+        Button(action: { showingExchangeRatesDialog = true }) {
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "dollarsign.circle.fill")
+                        .font(.callout)
+                        .foregroundColor(.white)
+                    
+                    Text("Exchange Rates")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.9))
+                    
+                    Image(systemName: "pencil.circle.fill")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.8))
+                }
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(currencyManager.allCurrencies) { currency in
+                            if currency.name != "CAD" {
+                                VStack(spacing: 1) {
+                                    Text(currency.symbol)
+                                        .font(.system(size: 9, weight: .medium))
+                                        .foregroundColor(.white.opacity(0.8))
+                                    Text("\(currency.exchangeRate, specifier: "%.2f")")
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .foregroundColor(.white)
+                                }
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(Color.white.opacity(0.15))
+                                .cornerRadius(3)
+                            }
+                        }
+                        
+                        if currencyManager.allCurrencies.filter({ $0.name != "CAD" }).isEmpty {
+                            Text("No rates")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.white.opacity(0.7))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.white.opacity(0.1))
+                                .cornerRadius(3)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.white.opacity(0.1))
+            .cornerRadius(6)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
     
+    private func refreshEntireScreen() {
+        currencyManager.fetchCurrencies()
+        transactionManager.fetchTransactions()
+        firebaseManager.fetchAllCustomers()
+        
+        // Calculate profit after a small delay to ensure data is loaded
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.calculateTotalExchangeProfit()
+        }
+    }
+    
+    private var totalExchangeProfitBarHorizontal: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .font(.callout)
+                .foregroundColor(.white)
+            
+            Text("Profit:")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.9))
+            
+            // Timeframe Filter Button
+            Menu {
+                ForEach(ProfitTimeframe.allCases, id: \.self) { timeframe in
+                    Button(action: {
+                        selectedProfitTimeframe = timeframe
+                        calculateTotalExchangeProfit()
+                    }) {
+                        HStack {
+                            Image(systemName: timeframe.icon)
+                            Text(timeframe.rawValue)
+                            if selectedProfitTimeframe == timeframe {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: selectedProfitTimeframe.icon)
+                        .font(.system(size: 10, weight: .medium))
+                    Text(selectedProfitTimeframe.rawValue)
+                        .font(.system(size: 11, weight: .semibold))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .medium))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color.white.opacity(0.15))
+                .cornerRadius(4)
+            }
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(totalExchangeProfit.keys.sorted()), id: \.self) { currency in
+                        if let profit = totalExchangeProfit[currency], abs(profit) >= 0.01 {
+                            HStack(spacing: 3) {
+                                Text(profit > 0 ? "+" : "")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(profit > 0 ? .green : .red)
+                                Text("\(profit, specifier: "%.2f")")
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .foregroundColor(profit > 0 ? .green : .red)
+                                Text(currency)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                            }
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background((profit > 0 ? Color.green : Color.red).opacity(0.15))
+                            .cornerRadius(4)
+                        }
+                    }
+                    
+                    if totalExchangeProfit.isEmpty || totalExchangeProfit.values.allSatisfy({ abs($0) < 0.01 }) {
+                        Text("No profit (\(selectedProfitTimeframe.rawValue.lowercased()))")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(4)
+                    }
+                }
+            }
+            .frame(maxWidth: 300)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(6)
+    }
+
+    private var totalExchangeProfitBarVertical: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.caption)
+                    .foregroundColor(.white)
+                
+                Text("Profit")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.9))
+                
+                // Compact Timeframe Button
+                Menu {
+                    ForEach(ProfitTimeframe.allCases, id: \.self) { timeframe in
+                        Button(action: {
+                            selectedProfitTimeframe = timeframe
+                            calculateTotalExchangeProfit()
+                        }) {
+                            HStack {
+                                Image(systemName: timeframe.icon)
+                                Text(timeframe.rawValue)
+                                if selectedProfitTimeframe == timeframe {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 2) {
+                        Image(systemName: selectedProfitTimeframe.icon)
+                            .font(.system(size: 8, weight: .medium))
+                        Text(selectedProfitTimeframe == .all ? "All" : selectedProfitTimeframe.rawValue.first?.uppercased() ?? "")
+                            .font(.system(size: 9, weight: .semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 6, weight: .medium))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.white.opacity(0.15))
+                    .cornerRadius(3)
+                }
+            }
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    ForEach(Array(totalExchangeProfit.keys.sorted()), id: \.self) { currency in
+                        if let profit = totalExchangeProfit[currency], abs(profit) >= 0.01 {
+                            VStack(spacing: 1) {
+                                Text(currency)
+                                    .font(.system(size: 8, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.8))
+                                Text("\(profit > 0 ? "+" : "")\(profit, specifier: "%.1f")")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(profit > 0 ? .green : .red)
+                            }
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                            .background((profit > 0 ? Color.green : Color.red).opacity(0.15))
+                            .cornerRadius(3)
+                        }
+                    }
+                    
+                    if totalExchangeProfit.isEmpty || totalExchangeProfit.values.allSatisfy({ abs($0) < 0.01 }) {
+                        Text("No profit")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(3)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.white.opacity(0.08))
+        .cornerRadius(5)
+    }
+
+    private func calculateTotalExchangeProfit() {
+        var profitByCurrency: [String: Double] = [:]
+        
+        // Filter transactions by timeframe
+        let filteredTransactions = transactionManager.transactions.filter { transaction in
+            guard transaction.isExchange else { return false }
+            
+            let transactionDate = transaction.timestamp.dateValue()
+            let now = Date()
+            
+            switch selectedProfitTimeframe {
+            case .day:
+                return Calendar.current.isDate(transactionDate, inSameDayAs: now)
+            case .week:
+                return Calendar.current.dateInterval(of: .weekOfYear, for: now)?.contains(transactionDate) ?? false
+            case .month:
+                return Calendar.current.dateInterval(of: .month, for: now)?.contains(transactionDate) ?? false
+            case .year:
+                return Calendar.current.dateInterval(of: .year, for: now)?.contains(transactionDate) ?? false
+            case .all:
+                return true
+            }
+        }
+        
+        print("🔍 Calculating profit for \(selectedProfitTimeframe.rawValue): \(filteredTransactions.count) transactions")
+        
+        // Go through filtered exchange transactions
+        for transaction in filteredTransactions {
+            guard let customRate = transaction.customExchangeRate,
+                  let receivingCurrencyName = transaction.receivingCurrencyName else {
+                continue
+            }
+            
+            let givingCurrencyName = transaction.currencyName
+            
+            // Find current exchange rates
+            let givingCurrency = currencyManager.allCurrencies.first { $0.name == givingCurrencyName }
+            let receivingCurrency = currencyManager.allCurrencies.first { $0.name == receivingCurrencyName }
+            
+            guard let givingRate = givingCurrency?.exchangeRate,
+                  let receivingRate = receivingCurrency?.exchangeRate else {
+                continue
+            }
+            
+            // Calculate current profit for this transaction
+            let currentMarketRate = (1.0 / givingRate) * receivingRate
+            let profitRate = customRate - currentMarketRate
+            let transactionProfit = profitRate * transaction.amount
+            
+            // Add to total for this currency
+            profitByCurrency[receivingCurrencyName] = (profitByCurrency[receivingCurrencyName] ?? 0) + transactionProfit
+        }
+        
+        totalExchangeProfit = profitByCurrency
+        print("💰 Total Exchange Profit (\(selectedProfitTimeframe.rawValue)): \(profitByCurrency)")
+    }
     private func clearForm() {
         selectedFromCustomer = nil
         selectedToCustomer = nil
@@ -1688,6 +2105,7 @@ struct CurrencyDropdownOverlay: View {
 
 struct TransactionRowView: View {
     let transaction: CurrencyTransaction
+    @StateObject private var currencyManager = CurrencyManager.shared
     
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -1715,6 +2133,33 @@ struct TransactionRowView: View {
         } else {
             return transaction.balancesAfterTransaction[transaction.taker] as? [String: Double] ?? [:]
         }
+    }
+    
+    // Dynamic profit calculation using current exchange rates
+    private var dynamicProfitData: (profit: Double, currency: String)? {
+        guard transaction.isExchange,
+              let customRate = transaction.customExchangeRate,
+              let receivingCurrencyName = transaction.receivingCurrencyName else {
+            return nil
+        }
+        
+        let givingCurrencyName = transaction.currencyName
+        
+        // Find current exchange rates from currencyManager
+        let givingCurrency = currencyManager.allCurrencies.first { $0.name == givingCurrencyName }
+        let receivingCurrency = currencyManager.allCurrencies.first { $0.name == receivingCurrencyName }
+        
+        guard let givingRate = givingCurrency?.exchangeRate,
+              let receivingRate = receivingCurrency?.exchangeRate else {
+            return nil
+        }
+        
+        // Calculate current market rate
+        let currentMarketRate = (1.0 / givingRate) * receivingRate
+        let profitRate = customRate - currentMarketRate
+        let totalProfit = profitRate * transaction.amount
+        
+        return (profit: totalProfit, currency: receivingCurrencyName)
     }
     
     var body: some View {
@@ -1949,22 +2394,47 @@ struct TransactionRowView: View {
                             }
                         }
                         
-                        // Profit Display with Currency Names - One Line
-                        if let profit = transaction.profitAmount, abs(profit) >= 0.01,
-                           let profitCurrency = transaction.profitCurrency {
-                            HStack(spacing: 8) {
-                                Text(profit > 0 ? "Profit:" : "Loss:")
-                                    .font(.system(size: 9, weight: .medium))
-                                    .foregroundColor(profit > 0 ? .green.opacity(0.8) : .red.opacity(0.8))
+                        // Current Profit Display with Dynamic Calculation
+                        if let profit = dynamicProfitData?.profit,
+                           let profitCurrency = dynamicProfitData?.currency {
+                            VStack(alignment: .leading, spacing: 4) {
+                                // Profit amount and percentage
+                                HStack(spacing: 8) {
+                                    Text(profit > 0 ? "Current Profit:" : (profit < 0 ? "Current Loss:" : "Break Even:"))
+                                        .font(.system(size: 9, weight: .medium))
+                                        .foregroundColor(profit > 0 ? .green.opacity(0.8) : (profit < 0 ? .red.opacity(0.8) : .gray))
+                                    
+                                    Text("\(profit > 0 ? "+" : "")\(profit, specifier: "%.2f") \(profitCurrency)")
+                                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                        .foregroundColor(profit > 0 ? .green.opacity(0.8) : (profit < 0 ? .red.opacity(0.8) : .gray))
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background((profit > 0 ? Color.green : (profit < 0 ? Color.red : Color.gray)).opacity(0.08))
+                                .cornerRadius(6)
                                 
-                                Text("\(profit > 0 ? "+" : "")\(profit, specifier: "%.2f") \(profitCurrency)")
-                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                    .foregroundColor(profit > 0 ? .green.opacity(0.8) : .red.opacity(0.8))
+                                // Profit percentage
+                                if let customRate = transaction.customExchangeRate,
+                                   let givingCurrency = currencyManager.allCurrencies.first(where: { $0.name == transaction.currencyName }),
+                                   let receivingCurrency = currencyManager.allCurrencies.first(where: { $0.name == transaction.receivingCurrencyName }) {
+                                    
+                                    let currentMarketRate = (1.0 / givingCurrency.exchangeRate) * receivingCurrency.exchangeRate
+                                    let profitPercentage = ((customRate - currentMarketRate) / currentMarketRate) * 100
+                                    
+                                    HStack(spacing: 4) {
+                                        Text("Profit %:")
+                                            .font(.system(size: 8, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                        Text("\(profitPercentage > 0 ? "+" : "")\(profitPercentage, specifier: "%.2f")%")
+                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                            .foregroundColor(profitPercentage > 0 ? .green.opacity(0.8) : (profitPercentage < 0 ? .red.opacity(0.8) : .gray))
+                                    }
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.gray.opacity(0.05))
+                                    .cornerRadius(4)
+                                }
                             }
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background((profit > 0 ? Color.green : Color.red).opacity(0.08))
-                            .cornerRadius(6)
                         }
                     } else {
                         VStack(spacing: 6) {
@@ -2102,6 +2572,10 @@ struct TransactionRowView: View {
             )
             .padding(.vertical, 8)
             .padding(.horizontal, 2)
+        }
+        .onAppear {
+            // Ensure currency manager fetches latest rates when row appears
+            currencyManager.fetchCurrencies()
         }
     }
 }
