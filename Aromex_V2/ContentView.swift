@@ -52,16 +52,17 @@ struct ContentView: View {
                 // iPhone and iPad portrait - use tab view
                 TabView {
                     NavigationView {
-                        MainContentWithTabs()
-                            .navigationTitle("AROMEX")
-                            #if os(iOS)
-                            .navigationBarTitleDisplayMode(.large)
-                            #endif
-                    }
-                    .tabItem {
-                        Image(systemName: "house.fill")
-                        Text("Home")
-                    }
+                            MainContentWithTabs()
+                                .environmentObject(firebaseManager) // Add this line
+                                .navigationTitle("AROMEX")
+                                #if os(iOS)
+                                .navigationBarTitleDisplayMode(.large)
+                                #endif
+                        }
+                        .tabItem {
+                            Image(systemName: "house.fill")
+                            Text("Home")
+                        }
                     
                     NavigationView {
                         CustomerListView()
@@ -100,6 +101,7 @@ struct MainContentWithTabs: View {
     @State private var selectedTab = 0
     @StateObject private var navigationManager = CustomerNavigationManager.shared
     @Environment(\.horizontalSizeClass) var horizontalSizeClass
+    @EnvironmentObject var firebaseManager: FirebaseManager
     
     private var shouldUseVerticalLayout: Bool {
         #if os(iOS)
@@ -122,6 +124,7 @@ struct MainContentWithTabs: View {
                         .environmentObject(navigationManager)
                 case 2:
                     CustomerDetailView()
+                        .environmentObject(firebaseManager)
                         .environmentObject(navigationManager)
                 default:
                     AddEntryView()

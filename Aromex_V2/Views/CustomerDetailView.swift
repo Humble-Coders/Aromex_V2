@@ -9,32 +9,34 @@ struct CustomerDetailView: View {
     
     @State private var searchText = ""
     @State private var selectedCustomer: Customer?
-    @State private var customerTransactions: [CurrencyTransaction] = []
+    @State private var customerMixedTransactions: [AnyMixedTransaction] = []
     @State private var customerBalances: [String: Double] = [:]
     @State private var isLoadingTransactions = false
     @State private var isLoadingBalances = false
+    
+    @StateObject private var mixedTransactionManager = MixedTransactionManager.shared
     
     private let db = Firestore.firestore()
     
     // Computed properties for responsive design
     private var shouldUseVerticalLayout: Bool {
-        #if os(iOS)
+#if os(iOS)
         return horizontalSizeClass == .compact
-        #else
+#else
         return false
-        #endif
+#endif
     }
     
     private var horizontalPadding: CGFloat {
-        #if os(macOS)
+#if os(macOS)
         return 32
-        #else
+#else
         if horizontalSizeClass == .regular {
             return 24
         } else {
             return 16
         }
-        #endif
+#endif
     }
     
     // Get all customers including "Myself"
@@ -214,7 +216,7 @@ struct CustomerDetailView: View {
         HStack {
             Button(action: {
                 selectedCustomer = nil
-                customerTransactions = []
+                customerMixedTransactions = []
                 customerBalances = [:]
             }) {
                 HStack(spacing: 8) {
@@ -273,7 +275,7 @@ struct CustomerDetailView: View {
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .fill(selectedCustomer?.type == .customer ? Color.blue :
-                                selectedCustomer?.type == .middleman ? Color.orange : Color.green)
+                                    selectedCustomer?.type == .middleman ? Color.orange : Color.green)
                     )
             }
             
@@ -381,13 +383,40 @@ struct CustomerDetailView: View {
                     ProgressView()
                         .scaleEffect(0.8)
                 } else {
-                    Text("\(customerTransactions.count) transactions")
-                        .font(.callout)
-                        .foregroundColor(.secondary)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(customerMixedTransactions.count) transactions")
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                        
+                        if !customerMixedTransactions.isEmpty {
+                            HStack(spacing: 8) {
+                                let currencyCount = customerMixedTransactions.filter { $0.transactionType == .currency }.count
+                                let salesCount = customerMixedTransactions.filter { $0.transactionType == .sales }.count
+                                
+                                if currencyCount > 0 {
+                                    Text("\(currencyCount) currency")
+                                        .font(.caption)
+                                        .foregroundColor(.blue)
+                                }
+                                
+                                if currencyCount > 0 && salesCount > 0 {
+                                    Text("•")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                if salesCount > 0 {
+                                    Text("\(salesCount) sales")
+                                        .font(.caption)
+                                        .foregroundColor(.purple)
+                                }
+                            }
+                        }
+                    }
                 }
             }
             
-            if customerTransactions.isEmpty && !isLoadingTransactions {
+            if customerMixedTransactions.isEmpty && !isLoadingTransactions {
                 VStack(spacing: 12) {
                     Image(systemName: "doc.text")
                         .font(.system(size: 40))
@@ -404,8 +433,8 @@ struct CustomerDetailView: View {
                 .padding(.vertical, 40)
             } else {
                 LazyVStack(spacing: 12) {
-                    ForEach(customerTransactions) { transaction in
-                        TransactionRowView(transaction: transaction)
+                    ForEach(customerMixedTransactions) { mixedTransaction in
+                        MixedTransactionView(mixedTransaction: mixedTransaction)
                     }
                 }
             }
@@ -493,15 +522,11 @@ struct CustomerDetailView: View {
         
         let customerId = customer.id == "myself_special_id" ? "myself_special_id" : (customer.id ?? "")
         
-        // Filter transactions where this customer is either giver or taker
-        let filteredTransactions = transactionManager.transactions.filter { transaction in
-            transaction.giver == customerId || transaction.taker == customerId
-        }
+        // Get mixed transactions for this customer
+        let filteredTransactions = mixedTransactionManager.getCustomerTransactions(customerId: customerId)
         
         DispatchQueue.main.async {
-            self.customerTransactions = filteredTransactions.sorted {
-                $0.timestamp.dateValue() > $1.timestamp.dateValue()
-            }
+            self.customerMixedTransactions = filteredTransactions
             self.isLoadingTransactions = false
         }
     }

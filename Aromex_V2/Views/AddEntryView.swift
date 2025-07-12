@@ -178,6 +178,9 @@ struct AddEntryView: View {
     
     @EnvironmentObject var navigationManager: CustomerNavigationManager
     
+    @StateObject private var salesTransactionManager = SalesTransactionManager.shared
+    @StateObject private var mixedTransactionManager = MixedTransactionManager.shared
+    
     enum ProfitTimeframe: String, CaseIterable {
         case day = "Day"
         case week = "Week"
@@ -393,8 +396,8 @@ struct AddEntryView: View {
             isAmountFieldFocused = false
             currencyManager.fetchCurrencies()
             transactionManager.fetchTransactions()
+            salesTransactionManager.fetchSalesTransactions()
             refreshEntireScreen()
-            // Remove the immediate call: calculateTotalExchangeProfit()
         }
         .onChange(of: selectedFromDropdownOpen) { isOpen in
             isFromFieldFocused = isOpen
@@ -617,17 +620,36 @@ struct AddEntryView: View {
                 
                 Spacer()
                 
-                if !transactionManager.transactions.isEmpty {
-                    Text("\(transactionManager.transactions.count) transactions")
-                        .font(.callout)
-                        .foregroundColor(.secondary)
+                if !mixedTransactionManager.mixedTransactions.isEmpty {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(mixedTransactionManager.mixedTransactions.count) transactions")
+                            .font(.callout)
+                            .foregroundColor(.secondary)
+                        
+                        HStack(spacing: 8) {
+                            let currencyCount = mixedTransactionManager.mixedTransactions.filter { $0.transactionType == .currency }.count
+                            let salesCount = mixedTransactionManager.mixedTransactions.filter { $0.transactionType == .sales }.count
+                            
+                            Text("\(currencyCount) currency")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                            
+                            Text("•")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Text("\(salesCount) sales")
+                                .font(.caption)
+                                .foregroundColor(.purple)
+                        }
+                    }
                 }
             }
             .padding(.horizontal, horizontalPadding)
             
             // Transactions List
             VStack(spacing: 16) {
-                if transactionManager.isLoading {
+                if transactionManager.isLoading || salesTransactionManager.isLoading {
                     HStack {
                         ProgressView()
                             .scaleEffect(1.2)
@@ -636,7 +658,7 @@ struct AddEntryView: View {
                             .foregroundColor(.secondary)
                     }
                     .padding(.vertical, 40)
-                } else if transactionManager.transactions.isEmpty {
+                } else if mixedTransactionManager.mixedTransactions.isEmpty {
                     VStack(spacing: 16) {
                         Image(systemName: "doc.text")
                             .font(.system(size: 40))
@@ -652,10 +674,8 @@ struct AddEntryView: View {
                     .padding(.vertical, 40)
                 } else {
                     LazyVStack(spacing: 12) {
-                        ForEach(transactionManager.transactions) { transaction in
-                            TransactionRowView(transaction: transaction)
-                                .environmentObject(firebaseManager)
-                                .environmentObject(navigationManager)
+                        ForEach(mixedTransactionManager.mixedTransactions) { mixedTransaction in
+                            MixedTransactionView(mixedTransaction: mixedTransaction)
                                 .frame(maxWidth: .infinity)
                         }
                     }
