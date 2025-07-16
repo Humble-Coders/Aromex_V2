@@ -302,3 +302,9 @@ class CurrencyManager: ObservableObject {
         directRatesListener?.remove() // Add this line
     }
 }
+
+extension Currency: Equatable {
+    static func == (lhs: Currency, rhs: Currency) -> Bool {
+        return lhs.id == rhs.id && lhs.name == rhs.name
+    }
+}

@@ -3,7 +3,7 @@ import FirebaseFirestore
 
 struct ProfitBreakdownDialog: View {
     let totalExchangeProfit: [String: Double]
-    let totalProfitInUSD: Double
+    let totalProfitInCAD: Double // Changed from totalProfitInUSD
     let timeframe: AddEntryView.ProfitTimeframe
     let currencyManager: CurrencyManager
     
@@ -86,30 +86,30 @@ struct ProfitBreakdownDialog: View {
                 .padding(.bottom, 24)
                 
                 VStack(spacing: 24) {
-                    // Total USD Profit Summary
+                    // Total CAD Profit Summary
                     VStack(alignment: .leading, spacing: 16) {
                         HStack {
                             Image(systemName: "dollarsign.circle.fill")
                                 .font(.system(size: 20))
                                 .foregroundColor(.green)
                             
-                            Text("Total Profit (USD)")
+                            Text("Total Profit (CAD)")
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(.primary)
                         }
                         
                         HStack {
-                            Text("$\(totalProfitInUSD, specifier: "%.2f")")
+                            Text("$\(totalProfitInCAD, specifier: "%.2f")")
                                 .font(.system(size: 32, weight: .bold, design: .monospaced))
-                                .foregroundColor(totalProfitInUSD >= 0 ? .green : .red)
+                                .foregroundColor(totalProfitInCAD >= 0 ? .green : .red)
                             
                             Spacer()
                             
                             VStack(alignment: .trailing, spacing: 4) {
-                                Text("Converted at")
+                                Text("Converted using")
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(.secondary)
-                                Text("Market Rates")
+                                Text("DirectExchangeRates")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundColor(.blue)
                             }
@@ -118,10 +118,10 @@ struct ProfitBreakdownDialog: View {
                     .padding(20)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(totalProfitInUSD >= 0 ? Color.green.opacity(0.05) : Color.red.opacity(0.05))
+                            .fill(totalProfitInCAD >= 0 ? Color.green.opacity(0.05) : Color.red.opacity(0.05))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(totalProfitInUSD >= 0 ? Color.green.opacity(0.2) : Color.red.opacity(0.2), lineWidth: 1)
+                                    .stroke(totalProfitInCAD >= 0 ? Color.green.opacity(0.2) : Color.red.opacity(0.2), lineWidth: 1)
                             )
                     )
                     
@@ -195,11 +195,15 @@ struct ProfitBreakdownDialog: View {
                                 .font(.system(size: 12, weight: .regular))
                                 .foregroundColor(.secondary)
                             
-                            Text("• USD conversion uses current market exchange rates")
+                            Text("• Market rates sourced exclusively from DirectExchangeRates collection")
                                 .font(.system(size: 12, weight: .regular))
                                 .foregroundColor(.secondary)
                             
-                            Text("• Total USD profit = Sum of all currency profits converted to USD")
+                            Text("• CAD conversion uses direct exchange rates only, no approximations")
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundColor(.secondary)
+                            
+                            Text("• Total CAD profit = Sum of all currency profits converted to CAD")
                                 .font(.system(size: 12, weight: .regular))
                                 .foregroundColor(.secondary)
                         }
@@ -232,16 +236,34 @@ struct CurrencyProfitRow: View {
     let profit: Double
     let currencyManager: CurrencyManager
     
-    private var profitInUSD: Double {
-        // Convert profit to USD using market rate
-        if let currencyData = currencyManager.allCurrencies.first(where: { $0.name == currency }) {
-            return profit / currencyData.exchangeRate
+    private var profitInCAD: Double? {
+        // Convert profit to CAD using DirectExchangeRates only
+        if currency == "CAD" {
+            return profit
         }
-        return 0.0
+        
+        // Try direct rate from currency to CAD
+        if let directRate = currencyManager.getDirectExchangeRate(from: currency, to: "CAD") {
+            return profit * directRate
+        }
+        
+        // Try reverse rate (CAD to currency) and invert
+        if let reverseRate = currencyManager.getDirectExchangeRate(from: "CAD", to: currency) {
+            return profit / reverseRate
+        }
+        
+        // No direct rate available
+        return nil
     }
     
     private var currencySymbol: String {
         return currencyManager.allCurrencies.first(where: { $0.name == currency })?.symbol ?? currency
+    }
+    
+    private var hasDirectRate: Bool {
+        return currency == "CAD" ||
+               currencyManager.getDirectExchangeRate(from: currency, to: "CAD") != nil ||
+               currencyManager.getDirectExchangeRate(from: "CAD", to: currency) != nil
     }
     
     var body: some View {
@@ -258,10 +280,29 @@ struct CurrencyProfitRow: View {
                         .foregroundColor(.primary)
                 }
                 
-                if let currencyData = currencyManager.allCurrencies.first(where: { $0.name == currency }) {
-                    Text("Rate: 1 USD = \(currencyData.exchangeRate, specifier: "%.4f") \(currencySymbol)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
+                // Show rate source info
+                if currency != "CAD" {
+                    if hasDirectRate {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle")
+                                .font(.system(size: 10))
+                                .foregroundColor(.green)
+                            
+                            Text("Direct rate available")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.green)
+                        }
+                    } else {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 10))
+                                .foregroundColor(.orange)
+                            
+                            Text("No direct rate to CAD")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.orange)
+                        }
+                    }
                 }
             }
             
@@ -274,26 +315,28 @@ struct CurrencyProfitRow: View {
                     .font(.system(size: 16, weight: .bold, design: .monospaced))
                     .foregroundColor(profit >= 0 ? .green : .red)
                 
-                // USD equivalent
-                HStack(spacing: 4) {
-                    Text("≈")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
-                    
-                    Text("\(profitInUSD > 0 ? "+" : "")$\(abs(profitInUSD), specifier: "%.2f")")
-                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                        .foregroundColor(profitInUSD >= 0 ? .green : .red)
-                    
-                    Text("USD")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.secondary)
+                // CAD equivalent
+                if let cadValue = profitInCAD {
+                    HStack(spacing: 4) {
+                        Text("≈")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.secondary)
+                        
+                        Text("\(cadValue > 0 ? "+" : "")$\(abs(cadValue), specifier: "%.2f")")
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundColor(cadValue >= 0 ? .green : .red)
+                        
+                        Text("CAD")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(cadValue >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
+                    )
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(profitInUSD >= 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
-                )
             }
         }
         .padding(.horizontal, 16)

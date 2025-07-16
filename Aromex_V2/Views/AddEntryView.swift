@@ -536,6 +536,10 @@ struct AddEntryView: View {
         return customers
     }
     
+    private func validateDirectRateExists(from: Currency, to: Currency) -> Bool {
+        return getMarketRateFromDirectRates(from: from, to: to) != nil
+    }
+    
     // Create "Myself" customer instance
     private var myselfCustomer: Customer {
         Customer(
@@ -600,7 +604,15 @@ struct AddEntryView: View {
             if currencyDropdownOpen {
                 CurrencyDropdownOverlay(
                     isOpen: $currencyDropdownOpen,
-                    selectedCurrency: $currencyManager.selectedCurrency,
+                    selectedCurrency: Binding(
+                        get: { currencyManager.selectedCurrency },
+                        set: { newCurrency in
+                            currencyManager.selectedCurrency = newCurrency
+                            if newCurrency != nil && isExchangeOn {
+                                handleGivingCurrencySelection()
+                            }
+                        }
+                    ),
                     currencies: currencyManager.allCurrencies,
                     buttonFrame: currencyButtonFrame,
                     onAddCurrency: {
@@ -609,11 +621,20 @@ struct AddEntryView: View {
                     }
                 )
             }
-            
+
+            // For receiving currency dropdown:
             if showReceivingCurrencyDropdown {
                 CurrencyDropdownOverlay(
                     isOpen: $showReceivingCurrencyDropdown,
-                    selectedCurrency: $selectedReceivingCurrency,
+                    selectedCurrency: Binding(
+                        get: { selectedReceivingCurrency },
+                        set: { newCurrency in
+                            selectedReceivingCurrency = newCurrency
+                            if newCurrency != nil && isExchangeOn {
+                                handleReceivingCurrencySelection()
+                            }
+                        }
+                    ),
                     currencies: currencyManager.allCurrencies,
                     buttonFrame: receivingCurrencyButtonFrame,
                     onAddCurrency: {
@@ -643,6 +664,27 @@ struct AddEntryView: View {
             if isOpen {
                 isAmountFieldFocused = false
                 currencyDropdownOpen = false
+            }
+        }
+        .onChange(of: currencyManager.selectedCurrency) { newValue in
+            if newValue != nil && isExchangeOn {
+                handleGivingCurrencySelection()
+            }
+        }
+        .onChange(of: selectedReceivingCurrency) { newValue in
+            if newValue != nil && isExchangeOn {
+                handleReceivingCurrencySelection()
+            }
+        }
+        .onChange(of: isExchangeOn) { newValue in
+            if !newValue {
+                selectedReceivingCurrency = nil
+                customExchangeRate = ""
+            } else {
+                // When exchange is turned on, try to auto-populate if both currencies are selected
+                if currencyManager.selectedCurrency != nil && selectedReceivingCurrency != nil {
+                    handleCurrencySelection()
+                }
             }
         }
         .onChange(of: currencyDropdownOpen) { isOpen in
@@ -1482,66 +1524,100 @@ struct AddEntryView: View {
     // Replace your exchangeRateCompactField with this debugging version:
     private var exchangeRateCompactField: some View {
         HStack(spacing: 8) {
-            // 1 Currency =
-            HStack(spacing: 4) {
-                Text("1")
-                    .font(.system(size: 14, weight: .semibold))
-                Text(currencyManager.selectedCurrency?.name ?? "USD")
-                    .font(.system(size: 12, weight: .medium))
-                Text("=")
-                    .font(.system(size: 14, weight: .semibold))
-            }
-            .foregroundColor(.primary)
-            .padding(.horizontal, 8)
-            .frame(height: 44)
-            .background(Color.gray.opacity(0.1))
-            .cornerRadius(6)
-            
-            // Rate Input with debugging
-            TextField("Rate", text: Binding(
-                get: { customExchangeRate },
-                set: { newValue in
-                    print("🎯 Rate input changed to: '\(newValue)'")
-                    print("🎯 Exchange toggle is: \(isExchangeOn)")
-                    print("🎯 Giving currency: \(currencyManager.selectedCurrency?.name ?? "nil")")
-                    print("🎯 Receiving currency: \(selectedReceivingCurrency?.name ?? "nil")")
-                    handleExchangeRateInputChange(newValue)
+            if let displayCurrencies = getDisplayCurrencies() {
+                // Left side - bigger currency
+                HStack(spacing: 4) {
+                    Text("1")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(displayCurrencies.left.name)
+                        .font(.system(size: 12, weight: .medium))
+                    Text("=")
+                        .font(.system(size: 14, weight: .semibold))
                 }
-            ))
-            .font(.system(size: 14, weight: .semibold, design: .monospaced))
-            #if os(iOS)
-            .keyboardType(.decimalPad)
-            #endif
-            .padding(.horizontal, 8)
-            .frame(width: 60, height: 44)
-            .background(Color.white)
-            .cornerRadius(6)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-            )
-            
-            // Receiving Currency
-            Button(action: {
-                showReceivingCurrencyDropdown.toggle()
-                print("🎯 Receiving currency dropdown toggled")
-            }) {
-                Text(selectedReceivingCurrency?.name ?? "Select")
+                .foregroundColor(.primary)
+                .padding(.horizontal, 8)
+                .frame(height: 44)
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(6)
+                
+                // Rate Input
+                TextField("Rate", text: Binding(
+                    get: { customExchangeRate },
+                    set: { newValue in
+                        handleExchangeRateInputChange(newValue)
+                    }
+                ))
+                .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                #if os(iOS)
+                .keyboardType(.decimalPad)
+                #endif
+                .padding(.horizontal, 8)
+                .frame(width: 80, height: 44)
+                .background(Color.white)
+                .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
+                
+                // Right side - smaller currency
+                Text(displayCurrencies.right.name)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(.primary)
                     .padding(.horizontal, 8)
                     .frame(height: 44)
-                    .background(Color.orange)
+                    .background(Color.green.opacity(0.1))
                     .cornerRadius(6)
-            }
-            .buttonStyle(PlainButtonStyle())
-            .background(
-                GeometryReader { geometry in
-                    Color.clear.onAppear {
-                        receivingCurrencyButtonFrame = geometry.frame(in: .global)
-                    }
+            } else {
+                // Fallback to original design if currencies not selected
+                HStack(spacing: 4) {
+                    Text("1")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(currencyManager.selectedCurrency?.name ?? "USD")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("=")
+                        .font(.system(size: 14, weight: .semibold))
                 }
-            )
+                .foregroundColor(.primary)
+                .padding(.horizontal, 8)
+                .frame(height: 44)
+                .background(Color.gray.opacity(0.1))
+                .cornerRadius(6)
+                
+                TextField("Rate", text: $customExchangeRate)
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    #if os(iOS)
+                    .keyboardType(.decimalPad)
+                    #endif
+                    .padding(.horizontal, 8)
+                    .frame(width: 60, height: 44)
+                    .background(Color.white)
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+                
+                Button(action: {
+                    showReceivingCurrencyDropdown.toggle()
+                }) {
+                    Text(selectedReceivingCurrency?.name ?? "Select")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .frame(height: 44)
+                        .background(Color.orange)
+                        .cornerRadius(6)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .background(
+                    GeometryReader { geometry in
+                        Color.clear.onAppear {
+                            receivingCurrencyButtonFrame = geometry.frame(in: .global)
+                        }
+                    }
+                )
+            }
         }
     }
 
@@ -1629,96 +1705,312 @@ struct AddEntryView: View {
         
         print("🔍 Checking currencies: \(givingCurrency.name) → \(receivingCurrency.name)")
         
-        // Check if both are non-USD
-        let bothNonUSD = givingCurrency.name != "USD" && receivingCurrency.name != "USD"
+        // Always check if we have a direct rate available
+        let hasDirectRate = getMarketRateFromDirectRates(from: givingCurrency, to: receivingCurrency) != nil
         
-        if bothNonUSD {
-            // Check if we already have this direct rate
-            let existingRate = currencyManager.getDirectExchangeRate(from: givingCurrency.name, to: receivingCurrency.name)
-            
-            if existingRate == nil {
-                print("🚨 Direct rate required! Showing dialog...")
-                showingDirectRateDialog = true
-                pendingDirectRateCallback = { providedRate in
-                    print("✅ Direct rate provided: \(providedRate)")
-                }
+        if !hasDirectRate {
+            print("🚨 No direct rate found! Showing dialog...")
+            showingDirectRateDialog = true
+            pendingDirectRateCallback = { providedRate in
+                print("✅ Direct rate provided: \(providedRate)")
             }
         }
+    }
+    
+    // MARK: - Exchange Rate Helper Methods
+    private func getBiggerCurrency(from currency1: Currency, to currency2: Currency) -> Currency {
+        // Compare exchange rates (higher rate means smaller value currency)
+        // So we want the currency with LOWER exchange rate on the left (bigger value)
+        return currency1.exchangeRate <= currency2.exchangeRate ? currency1 : currency2
+    }
+
+    private func getSmallerCurrency(from currency1: Currency, to currency2: Currency) -> Currency {
+        // Return the currency with higher exchange rate (smaller value)
+        return currency1.exchangeRate > currency2.exchangeRate ? currency1 : currency2
+    }
+
+    private func getDisplayCurrencies() -> (left: Currency, right: Currency)? {
+        guard let givingCurrency = currencyManager.selectedCurrency,
+              let receivingCurrency = selectedReceivingCurrency else {
+            return nil
+        }
+        
+        let biggerCurrency = getBiggerCurrency(from: givingCurrency, to: receivingCurrency)
+        let smallerCurrency = getSmallerCurrency(from: givingCurrency, to: receivingCurrency)
+        
+        return (left: biggerCurrency, right: smallerCurrency)
+    }
+
+    private func convertRateForCalculation(displayRate: Double) -> Double {
+        guard let displayCurrencies = getDisplayCurrencies(),
+              let givingCurrency = currencyManager.selectedCurrency,
+              let receivingCurrency = selectedReceivingCurrency else {
+            return displayRate
+        }
+        
+        // If the display order matches the actual transaction order, use rate as is
+        if displayCurrencies.left.name == givingCurrency.name {
+            return displayRate
+        } else {
+            // Display shows bigger=smaller, but we need smaller=bigger for calculation
+            // So we need to convert: if display shows 1 CAD = 60 INR,
+            // we need 1 INR = 1/60 CAD = 0.0167 CAD
+            return 1.0 / displayRate
+        }
+    }
+    
+    
+    // MARK: - Currency Selection Handler
+    private func handleCurrencySelection() {
+        guard let givingCurrency = currencyManager.selectedCurrency,
+              let receivingCurrency = selectedReceivingCurrency else {
+            customExchangeRate = ""
+            return
+        }
+        
+        print("🔄 Handling currency selection: \(givingCurrency.name) → \(receivingCurrency.name)")
+        
+        // Don't auto-populate if user is already typing
+        if !customExchangeRate.trimmingCharacters(in: .whitespaces).isEmpty {
+            print("⚠️ Rate field not empty, skipping auto-population")
+            return
+        }
+        
+        guard let displayCurrencies = getDisplayCurrencies() else {
+            print("❌ Could not determine display currencies")
+            return
+        }
+        
+        print("📊 Display format: 1 \(displayCurrencies.left.name) = X \(displayCurrencies.right.name)")
+        
+        // Always try to get rate from DirectExchangeRates collection
+        if let directRate = getMarketRateFromDirectRates(from: displayCurrencies.left, to: displayCurrencies.right) {
+            customExchangeRate = String(format: "%.4f", directRate)
+            print("📱 Auto-populated from DirectExchangeRates: \(customExchangeRate)")
+        } else {
+            print("❌ No direct rate found in DirectExchangeRates collection")
+            // Don't auto-populate, let user enter the rate
+            // The direct rate dialog will be shown when they start typing
+        }
+    }
+
+
+    // MARK: - Helper function specifically for receiving currency selection
+    private func handleReceivingCurrencySelection() {
+        print("🎯 Receiving currency selected: \(selectedReceivingCurrency?.name ?? "nil")")
+        
+        // Add a small delay to ensure UI is updated
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.handleCurrencySelection()
+        }
+    }
+
+    // MARK: - Helper function for giving currency selection
+    private func handleGivingCurrencySelection() {
+        print("🎯 Giving currency selected: \(currencyManager.selectedCurrency?.name ?? "nil")")
+        
+        // Clear the receiving currency selection when giving currency changes
+        // This forces user to reselect and ensures proper rate calculation
+        if selectedReceivingCurrency != nil {
+            selectedReceivingCurrency = nil
+            customExchangeRate = ""
+            print("🔄 Cleared receiving currency due to giving currency change")
+        }
+    }
+    
+    private func getMarketRateFromDirectRates(from: Currency, to: Currency) -> Double? {
+        // Always try to get direct rate first
+        if let directRate = currencyManager.getDirectExchangeRate(from: from.name, to: to.name) {
+            return directRate
+        }
+        
+        // If no direct rate found, try reverse direction and invert
+        if let reverseRate = currencyManager.getDirectExchangeRate(from: to.name, to: from.name) {
+            return 1.0 / reverseRate
+        }
+        
+        // If still no direct rate, return nil to indicate missing rate
+        return nil
+    }
+    
+    private func getDisplayMarketRate() -> Double? {
+        guard let displayCurrencies = getDisplayCurrencies() else { return nil }
+        
+        // Always get market rate from DirectExchangeRates collection
+        return getMarketRateFromDirectRates(from: displayCurrencies.left, to: displayCurrencies.right)
+    }
+
+    private func getMarketRateForDisplay() -> Double? {
+        guard let displayCurrencies = getDisplayCurrencies() else { return nil }
+        
+        let marketRate = getMarketRate2(from: displayCurrencies.left, to: displayCurrencies.right)
+        return marketRate
     }
 
     private var exchangeProfitLossDisplay: some View {
         VStack {
             if let givingCurrency = currencyManager.selectedCurrency,
                let receivingCurrency = selectedReceivingCurrency,
-               let customRate = Double(customExchangeRate.trimmingCharacters(in: .whitespaces)),
+               let displayRate = Double(customExchangeRate.trimmingCharacters(in: .whitespaces)),
                let transactionAmount = Double(amount.trimmingCharacters(in: .whitespaces)),
-               customRate > 0 && transactionAmount > 0,
-               let actualMarketRate = getMarketRate2(from: givingCurrency, to: receivingCurrency) {
+               displayRate > 0 && transactionAmount > 0,
+               let displayCurrencies = getDisplayCurrencies() {
                 
-                let profitRate = customRate - actualMarketRate
-                let totalProfitLoss = profitRate * transactionAmount
+                // Get market rate from DirectExchangeRates only
+                let displayMarketRate = getDisplayMarketRate()
                 
-                HStack(spacing: 20) {
-                    // Market Rate
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Market Rate")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        Text("1 \(givingCurrency.name) = \(actualMarketRate, specifier: "%.4f") \(receivingCurrency.name)")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
+                if let actualDisplayMarketRate = displayMarketRate {
+                    // Calculate profit in display terms (bigger currency = smaller currency)
+                    let displayProfitRate = displayRate - actualDisplayMarketRate
                     
-                    Spacer()
+                    // For profit calculation, convert to actual transaction direction
+                    let actualCustomRate = convertRateForCalculation(displayRate: displayRate)
+                    let actualMarketRate = getMarketRateFromDirectRates(from: givingCurrency, to: receivingCurrency) ?? 0
+                    let actualProfitRate = actualCustomRate - actualMarketRate
+                    let totalProfitLoss = actualProfitRate * transactionAmount
                     
-                    // Profit/Loss
-                    if abs(totalProfitLoss) >= 0.01 {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(totalProfitLoss > 0 ? "Your Profit" : "Your Loss")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(totalProfitLoss > 0 ? .green : .red)
-                            Text("\(totalProfitLoss > 0 ? "+" : "")\(totalProfitLoss, specifier: "%.2f") \(receivingCurrency.name)")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                .foregroundColor(totalProfitLoss > 0 ? .green : .red)
+                    HStack(spacing: 20) {
+                        // Market Rate (shown in display format)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Market Rate")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.secondary)
+                            Text("1 \(displayCurrencies.left.name) = \(actualDisplayMarketRate, specifier: "%.4f") \(displayCurrencies.right.name)")
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundColor(.secondary)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(totalProfitLoss > 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
-                        )
-                    } else {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text("Break Even")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.gray)
-                            Text("No profit/loss")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.gray)
+                        
+                        Spacer()
+                        
+                        // Profit/Loss (shown in receiving currency)
+                        if abs(totalProfitLoss) >= 0.01 {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(totalProfitLoss > 0 ? "Your Profit" : "Your Loss")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(totalProfitLoss > 0 ? .green : .red)
+                                Text("\(totalProfitLoss > 0 ? "+" : "")\(totalProfitLoss, specifier: "%.2f") \(receivingCurrency.name)")
+                                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                    .foregroundColor(totalProfitLoss > 0 ? .green : .red)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(totalProfitLoss > 0 ? Color.green.opacity(0.1) : Color.red.opacity(0.1))
+                            )
+                        } else {
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text("Break Even")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.gray)
+                                Text("No profit/loss")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.gray)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color.gray.opacity(0.1))
+                            )
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.gray.opacity(0.1))
-                        )
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.orange.opacity(0.05))
+                    .cornerRadius(10)
+                } else {
+                    // No market rate available - show message
+                    VStack(spacing: 8) {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.system(size: 14))
+                                .foregroundColor(.orange)
+                            Text("Market Rate Required")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.orange)
+                        }
+                        
+                        Text("Please provide a direct exchange rate to calculate profit/loss")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Color.orange.opacity(0.05))
+                    .cornerRadius(10)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color.orange.opacity(0.05))
-                .cornerRadius(10)
+            }
+        }
+    }
+    
+    private var rateInfoDisplay: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let displayCurrencies = getDisplayCurrencies() {
+                HStack {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundColor(.blue)
+                    
+                    Text("Enter rate as: 1 \(displayCurrencies.left.name) = X \(displayCurrencies.right.name)")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.blue)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.blue.opacity(0.1))
+                .cornerRadius(6)
+                
+                // Show market rate availability status
+                if let marketRate = getDisplayMarketRate() {
+                    HStack {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 12))
+                            .foregroundColor(.green)
+                        
+                        Text("Market rate available: \(marketRate, specifier: "%.4f")")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.green)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(Color.green.opacity(0.1))
+                    .cornerRadius(6)
+                } else {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 12))
+                            .foregroundColor(.orange)
+                        
+                        Text("No market rate found - profit calculation unavailable")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.orange)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(6)
+                }
+            }
+        }
+    }
+    
+    private var exchangeRateFieldWithInfo: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            exchangeRateCompactField
+            
+            if selectedReceivingCurrency != nil {
+                rateInfoDisplay
             }
         }
     }
 
     private func getMarketRate2(from givingCurrency: Currency, to receivingCurrency: Currency) -> Double? {
-        if currencyManager.requiresDirectRate(givingCurrency: givingCurrency, receivingCurrency: receivingCurrency) {
-            return currencyManager.getDirectExchangeRate(from: givingCurrency.name, to: receivingCurrency.name)
-        } else {
-            return (1.0 / givingCurrency.exchangeRate) * receivingCurrency.exchangeRate
-        }
+        // Always use DirectExchangeRates collection only
+        return getMarketRateFromDirectRates(from: givingCurrency, to: receivingCurrency)
     }
+    
     // Notes Row
     private var notesRow: some View {
         HStack(spacing: 12) {
@@ -1872,12 +2164,12 @@ struct AddEntryView: View {
         // Additional validation for exchange transactions
         if isExchangeOn {
             guard let receivingCurrency = selectedReceivingCurrency,
-                  let customRate = Double(customExchangeRate.trimmingCharacters(in: .whitespaces)) else {
+                  let displayRate = Double(customExchangeRate.trimmingCharacters(in: .whitespaces)) else {
                 transactionError = "Please fill in exchange rate and receiving currency"
                 return
             }
             
-            guard customRate > 0 else {
+            guard displayRate > 0 else {
                 transactionError = "Exchange rate must be greater than 0"
                 return
             }
@@ -1886,18 +2178,28 @@ struct AddEntryView: View {
                 transactionError = "Giving and receiving currencies must be different"
                 return
             }
+            
+            // Verify that we have a market rate available in DirectExchangeRates
+            guard getMarketRateFromDirectRates(from: currency, to: receivingCurrency) != nil else {
+                transactionError = "Market rate not available. Please add direct exchange rate first."
+                return
+            }
         }
         
         isProcessingTransaction = true
         transactionError = ""
         
         if isExchangeOn {
-            // Handle exchange transaction
+            // Convert display rate to actual transaction rate
+            let displayRate = Double(customExchangeRate.trimmingCharacters(in: .whitespaces))!
+            let actualCustomRate = convertRateForCalculation(displayRate: displayRate)
+            
+            // Handle exchange transaction with converted rate
             transactionManager.addExchangeTransaction(
                 amount: transactionAmount,
                 givingCurrency: currency,
                 receivingCurrency: selectedReceivingCurrency!,
-                customExchangeRate: Double(customExchangeRate.trimmingCharacters(in: .whitespaces))!,
+                customExchangeRate: actualCustomRate,
                 fromCustomer: fromCustomer,
                 toCustomer: toCustomer,
                 notes: notes.trimmingCharacters(in: .whitespaces)
@@ -1914,7 +2216,7 @@ struct AddEntryView: View {
                 }
             }
         } else {
-            // Handle regular transaction
+            // Handle regular transaction (unchanged)
             transactionManager.addTransaction(
                 amount: transactionAmount,
                 currency: currency,
@@ -1937,117 +2239,196 @@ struct AddEntryView: View {
     }
     // Exchange Rates Display Components
     private var exchangeRatesBarHorizontal: some View {
-        Button(action: { showingExchangeRatesDialog = true }) {
-            HStack(spacing: 8) {
-                Image(systemName: "dollarsign.circle.fill")
-                    .font(.body)
-                    .foregroundColor(.white)
-                
-                Text("Rates:")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
-                
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(currencyManager.allCurrencies) { currency in
-                            if currency.name != "CAD" {
-                                HStack(spacing: 3) {
-                                    Text("1$ =")
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.8))
-                                    Text("\(currency.exchangeRate, specifier: "%.2f")")
-                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                        .foregroundColor(.white)
-                                    Text(currency.name)
-                                        .font(.system(size: 11, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.8))
-                                }
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(Color.white.opacity(0.15))
-                                .cornerRadius(4)
-                            }
-                        }
-                        
-                        if currencyManager.allCurrencies.filter({ $0.name != "CAD" }).isEmpty {
-                            Text("No custom currencies")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(4)
-                        }
-                    }
-                }
-                .frame(maxWidth: 400)
-                
-                Image(systemName: "pencil.circle.fill")
-                    .font(.callout)
-                    .foregroundColor(.white.opacity(0.8))
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.1))
-            .cornerRadius(8)
-        }
-        .buttonStyle(PlainButtonStyle())
+       Button(action: { showingExchangeRatesDialog = true }) {
+           HStack(spacing: 8) {
+               Image(systemName: "dollarsign.circle.fill")
+                   .font(.body)
+                   .foregroundColor(.white)
+               
+               Text("Rates:")
+                   .font(.system(size: 14, weight: .semibold))
+                   .foregroundColor(.white.opacity(0.9))
+               
+               ScrollView(.horizontal, showsIndicators: false) {
+                   HStack(spacing: 8) {
+                       ForEach(currencyManager.allCurrencies) { currency in
+                           if currency.name != "CAD" {
+                               let directRate = currencyManager.getDirectExchangeRate(from: "CAD", to: currency.name)
+                               let reverseRate = currencyManager.getDirectExchangeRate(from: currency.name, to: "CAD")
+                               
+                               HStack(spacing: 3) {
+                                   Text("1$ =")
+                                       .font(.system(size: 11, weight: .medium))
+                                       .foregroundColor(.white.opacity(0.8))
+                                   
+                                   Group {
+                                       if let directRate = directRate {
+                                           Text("\(directRate, specifier: "%.4f")")
+                                               .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                               .foregroundColor(.white)
+                                               .onAppear {
+                                                   print("📊 ExchangeRatesBarH: Using direct rate for CAD to \(currency.name): \(directRate)")
+                                               }
+                                       } else if let reverseRate = reverseRate {
+                                           let calculatedRate = 1.0/reverseRate
+                                           Text("\(calculatedRate, specifier: "%.4f")")
+                                               .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                               .foregroundColor(.white.opacity(0.7))
+                                               .onAppear {
+                                                   print("📊 ExchangeRatesBarH: Using reverse rate for CAD to \(currency.name): \(currency.name) to CAD = \(reverseRate), calculated CAD to \(currency.name) = \(calculatedRate)")
+                                               }
+                                       } else {
+                                           Text("N/A")
+                                               .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                               .foregroundColor(.white.opacity(0.5))
+                                               .onAppear {
+                                                   print("⚠️ ExchangeRatesBarH: No rate found for CAD to \(currency.name) (neither direct nor reverse)")
+                                               }
+                                       }
+                                   }
+                                   .onAppear {
+                                       print("🔍 ExchangeRatesBarH: Processing currency \(currency.name)")
+                                       print("   - Direct rate (CAD to \(currency.name)): \(directRate?.description ?? "nil")")
+                                       print("   - Reverse rate (\(currency.name) to CAD): \(reverseRate?.description ?? "nil")")
+                                   }
+                                   
+                                   Text(currency.name)
+                                       .font(.system(size: 11, weight: .medium))
+                                       .foregroundColor(.white.opacity(0.8))
+                               }
+                               .padding(.horizontal, 6)
+                               .padding(.vertical, 3)
+                               .background(Color.white.opacity(0.15))
+                               .cornerRadius(4)
+                           }
+                       }
+                       
+                       if currencyManager.allCurrencies.filter({ $0.name != "CAD" }).isEmpty {
+                           Text("No custom currencies")
+                               .font(.system(size: 11, weight: .medium))
+                               .foregroundColor(.white.opacity(0.7))
+                               .padding(.horizontal, 8)
+                               .padding(.vertical, 3)
+                               .background(Color.white.opacity(0.1))
+                               .cornerRadius(4)
+                               .onAppear {
+                                   print("⚠️ ExchangeRatesBarH: No non-CAD currencies found")
+                               }
+                       }
+                   }
+                   .onAppear {
+                       print("📊 ExchangeRatesBarH: Loading horizontal exchange rates display")
+                       print("   - Total currencies: \(currencyManager.allCurrencies.count)")
+                       print("   - Non-CAD currencies: \(currencyManager.allCurrencies.filter({ $0.name != "CAD" }).count)")
+                   }
+               }
+               .frame(maxWidth: 400)
+               
+               Image(systemName: "pencil.circle.fill")
+                   .font(.callout)
+                   .foregroundColor(.white.opacity(0.8))
+           }
+           .padding(.horizontal, 12)
+           .padding(.vertical, 6)
+           .background(Color.white.opacity(0.1))
+           .cornerRadius(8)
+       }
+       .buttonStyle(PlainButtonStyle())
     }
 
     private var exchangeRatesBarVertical: some View {
-        Button(action: { showingExchangeRatesDialog = true }) {
-            VStack(spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "dollarsign.circle.fill")
-                        .font(.callout)
-                        .foregroundColor(.white)
-                    
-                    Text("Exchange Rates")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.9))
-                    
-                    Image(systemName: "pencil.circle.fill")
-                        .font(.caption)
-                        .foregroundColor(.white.opacity(0.8))
-                }
-                
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(currencyManager.allCurrencies) { currency in
-                            if currency.name != "CAD" {
-                                VStack(spacing: 1) {
-                                    Text(currency.symbol)
-                                        .font(.system(size: 9, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.8))
-                                    Text("\(currency.exchangeRate, specifier: "%.2f")")
-                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                        .foregroundColor(.white)
-                                }
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Color.white.opacity(0.15))
-                                .cornerRadius(3)
-                            }
-                        }
-                        
-                        if currencyManager.allCurrencies.filter({ $0.name != "CAD" }).isEmpty {
-                            Text("No rates")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.white.opacity(0.7))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.white.opacity(0.1))
-                                .cornerRadius(3)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Color.white.opacity(0.1))
-            .cornerRadius(6)
-        }
-        .buttonStyle(PlainButtonStyle())
+       Button(action: { showingExchangeRatesDialog = true }) {
+           VStack(spacing: 6) {
+               HStack(spacing: 6) {
+                   Image(systemName: "dollarsign.circle.fill")
+                       .font(.callout)
+                       .foregroundColor(.white)
+                   
+                   Text("Exchange Rates")
+                       .font(.system(size: 13, weight: .semibold))
+                       .foregroundColor(.white.opacity(0.9))
+                   
+                   Image(systemName: "pencil.circle.fill")
+                       .font(.caption)
+                       .foregroundColor(.white.opacity(0.8))
+               }
+               
+               ScrollView(.horizontal, showsIndicators: false) {
+                   HStack(spacing: 6) {
+                       ForEach(currencyManager.allCurrencies) { currency in
+                           if currency.name != "CAD" {
+                               VStack(spacing: 1) {
+                                   Text(currency.symbol)
+                                       .font(.system(size: 9, weight: .medium))
+                                       .foregroundColor(.white.opacity(0.8))
+                                   
+                                   let directRate = currencyManager.getDirectExchangeRate(from: currency.name, to: "CAD")
+                                   let reverseRate = currencyManager.getDirectExchangeRate(from: "CAD", to: currency.name)
+                                   
+                                   Group {
+                                       if let directRate = directRate {
+                                           Text("\(directRate, specifier: "%.4f")")
+                                               .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                               .foregroundColor(.white)
+                                               .onAppear {
+                                                   print("📊 ExchangeRatesBar: Using direct rate for \(currency.name) to CAD: \(directRate)")
+                                               }
+                                       } else if let reverseRate = reverseRate {
+                                           let calculatedRate = 1.0/reverseRate
+                                           Text("\(calculatedRate, specifier: "%.4f")")
+                                               .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                               .foregroundColor(.white.opacity(0.7))
+                                               .onAppear {
+                                                   print("📊 ExchangeRatesBar: Using reverse rate for \(currency.name) to CAD: CAD to \(currency.name) = \(reverseRate), calculated \(currency.name) to CAD = \(calculatedRate)")
+                                               }
+                                       } else {
+                                           Text("No rate")
+                                               .font(.system(size: 9, weight: .medium))
+                                               .foregroundColor(.white.opacity(0.5))
+                                               .onAppear {
+                                                   print("⚠️ ExchangeRatesBar: No rate found for \(currency.name) to CAD (neither direct nor reverse)")
+                                               }
+                                       }
+                                   }
+                                   .onAppear {
+                                       print("🔍 ExchangeRatesBar: Processing currency \(currency.name) (\(currency.symbol))")
+                                       print("   - Direct rate (\(currency.name) to CAD): \(directRate?.description ?? "nil")")
+                                       print("   - Reverse rate (CAD to \(currency.name)): \(reverseRate?.description ?? "nil")")
+                                   }
+                               }
+                               .padding(.horizontal, 5)
+                               .padding(.vertical, 2)
+                               .background(Color.white.opacity(0.15))
+                               .cornerRadius(3)
+                           }
+                       }
+                       
+                       if currencyManager.allCurrencies.filter({ $0.name != "CAD" }).isEmpty {
+                           Text("No rates")
+                               .font(.system(size: 10, weight: .medium))
+                               .foregroundColor(.white.opacity(0.7))
+                               .padding(.horizontal, 6)
+                               .padding(.vertical, 2)
+                               .background(Color.white.opacity(0.1))
+                               .cornerRadius(3)
+                               .onAppear {
+                                   print("⚠️ ExchangeRatesBar: No non-CAD currencies found")
+                               }
+                       }
+                   }
+                   .onAppear {
+                       print("📊 ExchangeRatesBar: Loading exchange rates display")
+                       print("   - Total currencies: \(currencyManager.allCurrencies.count)")
+                       print("   - Non-CAD currencies: \(currencyManager.allCurrencies.filter({ $0.name != "CAD" }).count)")
+                   }
+               }
+           }
+           .padding(.horizontal, 10)
+           .padding(.vertical, 5)
+           .background(Color.white.opacity(0.1))
+           .cornerRadius(6)
+       }
+       .buttonStyle(PlainButtonStyle())
     }
     
     private func refreshEntireScreen() {
@@ -2140,7 +2521,7 @@ struct AddEntryView: View {
         .sheet(isPresented: $showingProfitBreakdown) {
             ProfitBreakdownDialog(
                 totalExchangeProfit: totalExchangeProfit,
-                totalProfitInUSD: totalProfitInUSD,
+                totalProfitInCAD: totalProfitInUSD,
                 timeframe: selectedProfitTimeframe,
                 currencyManager: currencyManager
             )
@@ -2225,17 +2606,41 @@ struct AddEntryView: View {
         .sheet(isPresented: $showingProfitBreakdown) {
             ProfitBreakdownDialog(
                 totalExchangeProfit: totalExchangeProfit,
-                totalProfitInUSD: totalProfitInUSD,
+                totalProfitInCAD: totalProfitInUSD,
                 timeframe: selectedProfitTimeframe,
                 currencyManager: currencyManager
             )
+        }
+    }
+    
+    private func getDisplayRateFromDirectRate(directRate: Double, givingCurrency: Currency, receivingCurrency: Currency) -> Double {
+        guard let displayCurrencies = getDisplayCurrencies() else { return directRate }
+        
+        // If display order matches transaction order, use direct rate as is
+        if displayCurrencies.left.name == givingCurrency.name {
+            return directRate
+        } else {
+            // Display shows bigger=smaller, but direct rate is smaller=bigger
+            return 1.0 / directRate
+        }
+    }
+    
+    private func getDisplayRateFromMarketRate(marketRate: Double, givingCurrency: Currency, receivingCurrency: Currency) -> Double {
+        guard let displayCurrencies = getDisplayCurrencies() else { return marketRate }
+        
+        // If display order matches transaction order, use market rate as is
+        if displayCurrencies.left.name == givingCurrency.name {
+            return marketRate
+        } else {
+            // Display shows bigger=smaller, but market rate is smaller=bigger
+            return 1.0 / marketRate
         }
     }
 
     // Replace the calculateTotalExchangeProfit function in AddEntryView:
     private func calculateTotalExchangeProfit() {
         var profitByCurrency: [String: Double] = [:]
-        var totalUSDProfit: Double = 0.0
+        var totalCADProfit: Double = 0.0
         
         // Filter transactions by timeframe
         let filteredTransactions = transactionManager.transactions.filter { transaction in
@@ -2269,45 +2674,49 @@ struct AddEntryView: View {
             
             let givingCurrencyName = transaction.currencyName
             
-            // Find current currencies
-            let givingCurrency = currencyManager.allCurrencies.first { $0.name == givingCurrencyName }
-            let receivingCurrency = currencyManager.allCurrencies.first { $0.name == receivingCurrencyName }
+            // Always get market rate from DirectExchangeRates collection only
+            let currentMarketRate: Double?
             
-            guard let givingCurr = givingCurrency,
-                  let receivingCurr = receivingCurrency else {
-                continue
-            }
-            
-            var currentMarketRate: Double
-            
-            // Check if we need direct rate
-            if currencyManager.requiresDirectRate(givingCurrency: givingCurr, receivingCurrency: receivingCurr) {
-                // Use direct rate
-                guard let directRate = currencyManager.getDirectExchangeRate(from: givingCurrencyName, to: receivingCurrencyName) else {
-                    continue // Skip if no direct rate available
-                }
+            if let directRate = currencyManager.getDirectExchangeRate(from: givingCurrencyName, to: receivingCurrencyName) {
                 currentMarketRate = directRate
+            } else if let reverseRate = currencyManager.getDirectExchangeRate(from: receivingCurrencyName, to: givingCurrencyName) {
+                currentMarketRate = 1.0 / reverseRate
             } else {
-                // Use USD-based calculation
-                currentMarketRate = (1.0 / givingCurr.exchangeRate) * receivingCurr.exchangeRate
+                print("⚠️ No market rate found in DirectExchangeRates for \(givingCurrencyName) → \(receivingCurrencyName)")
+                continue // Skip if no direct rate available
             }
+            
+            guard let actualMarketRate = currentMarketRate else { continue }
             
             // Calculate current profit for this transaction
-            let profitRate = customRate - currentMarketRate
+            let profitRate = customRate - actualMarketRate
             let transactionProfit = profitRate * transaction.amount
             
             // Add to total for this currency
             profitByCurrency[receivingCurrencyName] = (profitByCurrency[receivingCurrencyName] ?? 0) + transactionProfit
             
-            // Convert profit to USD using market rate
-            let profitInUSD = transactionProfit / receivingCurr.exchangeRate
-            totalUSDProfit += profitInUSD
+            // Convert profit to CAD using DirectExchangeRates only
+            if receivingCurrencyName == "CAD" {
+                totalCADProfit += transactionProfit
+            } else {
+                // Try to get CAD conversion from DirectExchangeRates
+                if let cadRate = currencyManager.getDirectExchangeRate(from: receivingCurrencyName, to: "CAD") {
+                    let profitInCAD = transactionProfit * cadRate
+                    totalCADProfit += profitInCAD
+                } else if let reverseCadRate = currencyManager.getDirectExchangeRate(from: "CAD", to: receivingCurrencyName) {
+                    let profitInCAD = transactionProfit / reverseCadRate
+                    totalCADProfit += profitInCAD
+                } else {
+                    print("⚠️ Could not convert \(receivingCurrencyName) profit to CAD - no direct rate available")
+                    // Don't add to total CAD profit if no conversion rate available
+                }
+            }
         }
         
         totalExchangeProfit = profitByCurrency
-        totalProfitInUSD = totalUSDProfit
+        totalProfitInUSD = totalCADProfit // Now this represents CAD profit
         print("💰 Total Exchange Profit (\(selectedProfitTimeframe.rawValue)): \(profitByCurrency)")
-        print("💵 Total Profit in USD: $\(totalUSDProfit)")
+        print("💵 Total Profit in CAD: $\(totalCADProfit)")
     }
     private func clearForm() {
         selectedFromCustomer = nil
@@ -2730,8 +3139,49 @@ struct TransactionRowView: View {
             navigationManager.navigateToCustomer(customer)
         }
     }
+    private func calculateProfitPercentage(customRate: Double, givingCurrency: String, receivingCurrency: String) -> Double? {
+        // Get market rate from DirectExchangeRates only
+        let marketRate: Double?
+        
+        if let directRate = currencyManager.getDirectExchangeRate(from: givingCurrency, to: receivingCurrency) {
+            marketRate = directRate
+        } else if let reverseRate = currencyManager.getDirectExchangeRate(from: receivingCurrency, to: givingCurrency) {
+            marketRate = 1.0 / reverseRate
+        } else {
+            return nil // No market rate available
+        }
+        
+        guard let actualMarketRate = marketRate, actualMarketRate > 0 else {
+            return nil
+        }
+        
+        let profitPercentage = ((customRate - actualMarketRate) / actualMarketRate) * 100
+        return profitPercentage
+    }
+    private func getCADConversionFromDirectRates(amount: Double, fromCurrency: String) -> Double? {
+        // If it's already CAD, return as is
+        if fromCurrency == "CAD" {
+            return amount
+        }
+        
+        // Try direct rate from currency to CAD
+        if let directRate = currencyManager.getDirectExchangeRate(from: fromCurrency, to: "CAD") {
+            return amount * directRate
+        }
+        
+        // Try reverse rate (CAD to currency) and invert
+        if let reverseRate = currencyManager.getDirectExchangeRate(from: "CAD", to: fromCurrency) {
+            return amount / reverseRate
+        }
+        
+        // No direct rate available
+        return nil
+    }
     // Dynamic profit calculation using current exchange rates
     // Replace the dynamicProfitData computed property in TransactionRowView:
+    // MARK: - Updated TransactionRowView dynamicProfitData
+    // Replace the dynamicProfitData computed property in TransactionRowView with this:
+
     private var dynamicProfitData: (profit: Double, currency: String)? {
         guard transaction.isExchange,
               let customRate = transaction.customExchangeRate,
@@ -2750,21 +3200,24 @@ struct TransactionRowView: View {
             return nil
         }
         
-        var currentMarketRate: Double
+        // Always get market rate from DirectExchangeRates only
+        let currentMarketRate: Double?
         
-        // Check if we need direct rate
-        if currencyManager.requiresDirectRate(givingCurrency: givingCurr, receivingCurrency: receivingCurr) {
-            // Use direct rate
-            guard let directRate = currencyManager.getDirectExchangeRate(from: givingCurrencyName, to: receivingCurrencyName) else {
-                return nil // No direct rate available
-            }
+        // First try direct rate
+        if let directRate = currencyManager.getDirectExchangeRate(from: givingCurrencyName, to: receivingCurrencyName) {
             currentMarketRate = directRate
+        } else if let reverseRate = currencyManager.getDirectExchangeRate(from: receivingCurrencyName, to: givingCurrencyName) {
+            // Use reverse rate if available
+            currentMarketRate = 1.0 / reverseRate
         } else {
-            // Use USD-based calculation
-            currentMarketRate = (1.0 / givingCurr.exchangeRate) * receivingCurr.exchangeRate
+            return nil // No direct rate available
         }
         
-        let profitRate = customRate - currentMarketRate
+        guard let actualMarketRate = currentMarketRate else {
+            return nil
+        }
+        
+        let profitRate = customRate - actualMarketRate
         let totalProfit = profitRate * transaction.amount
         
         return (profit: totalProfit, currency: receivingCurrencyName)
@@ -3016,12 +3469,11 @@ struct TransactionRowView: View {
                             }
                         }
                         
-                        // Current Profit Display with Dynamic Calculation
-                        // Current Profit Display with Dynamic Calculation and USD Conversion
+                        // Current Profit Display with DirectExchangeRates CAD Conversion
                         if let profit = dynamicProfitData?.profit,
                            let profitCurrency = dynamicProfitData?.currency {
                             VStack(alignment: .leading, spacing: 4) {
-                                // Profit amount and percentage
+                                // Profit amount
                                 HStack(spacing: 8) {
                                     Text(profit > 0 ? "Current Profit:" : (profit < 0 ? "Current Loss:" : "Break Even:"))
                                         .font(.system(size: 9, weight: .medium))
@@ -3036,44 +3488,61 @@ struct TransactionRowView: View {
                                 .background((profit > 0 ? Color.green : (profit < 0 ? Color.red : Color.gray)).opacity(0.08))
                                 .cornerRadius(6)
                                 
-                                // USD Conversion
-                                if let receivingCurrency = currencyManager.allCurrencies.first(where: { $0.name == transaction.receivingCurrencyName }) {
-                                    let profitInUSD = profit / receivingCurrency.exchangeRate
+                                // CAD Conversion using DirectExchangeRates only
+                                if profitCurrency != "CAD" {
+                                    let profitInCAD = getCADConversionFromDirectRates(amount: profit, fromCurrency: profitCurrency)
                                     
-                                    HStack(spacing: 4) {
-                                        Text("≈")
-                                            .font(.system(size: 8, weight: .medium))
-                                            .foregroundColor(.secondary)
-                                        Text("\(profitInUSD > 0 ? "+" : "")$\(abs(profitInUSD), specifier: "%.2f")")
-                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                            .foregroundColor(profitInUSD > 0 ? .green.opacity(0.8) : (profitInUSD < 0 ? .red.opacity(0.8) : .gray))
-                                        Text("CAD")
-                                            .font(.system(size: 8, weight: .medium))
-                                            .foregroundColor(.secondary)
+                                    if let cadAmount = profitInCAD {
+                                        HStack(spacing: 4) {
+                                            Text("≈")
+                                                .font(.system(size: 8, weight: .medium))
+                                                .foregroundColor(.secondary)
+                                            Text("\(cadAmount > 0 ? "+" : "")$\(abs(cadAmount), specifier: "%.2f")")
+                                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                                .foregroundColor(cadAmount > 0 ? .green.opacity(0.8) : (cadAmount < 0 ? .red.opacity(0.8) : .gray))
+                                            Text("CAD")
+                                                .font(.system(size: 8, weight: .medium))
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.gray.opacity(0.05))
+                                        .cornerRadius(4)
+                                    } else {
+                                        HStack(spacing: 4) {
+                                            Text("≈")
+                                                .font(.system(size: 8, weight: .medium))
+                                                .foregroundColor(.secondary)
+                                            Text("No CAD rate")
+                                                .font(.system(size: 9, weight: .medium))
+                                                .foregroundColor(.orange)
+                                        }
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.orange.opacity(0.05))
+                                        .cornerRadius(4)
                                     }
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.gray.opacity(0.05))
-                                    .cornerRadius(4)
                                 }
                                 
-                                // Profit percentage
-                                if let customRate = transaction.customExchangeRate,
-                                   let givingCurrency = currencyManager.allCurrencies.first(where: { $0.name == transaction.currencyName }),
-                                   let receivingCurrency = currencyManager.allCurrencies.first(where: { $0.name == transaction.receivingCurrencyName }) {
+                                // Profit percentage using DirectExchangeRates
+                                if let customRate = transaction.customExchangeRate {
+                                    let profitPercentage = calculateProfitPercentage(
+                                        customRate: customRate,
+                                        givingCurrency: transaction.currencyName,
+                                        receivingCurrency: transaction.receivingCurrencyName ?? ""
+                                    )
                                     
-                                    let currentMarketRate = (1.0 / givingCurrency.exchangeRate) * receivingCurrency.exchangeRate
-                                    let profitPercentage = ((customRate - currentMarketRate) / currentMarketRate) * 100
-                                    
-                                    HStack(spacing: 4) {
-                                        Text("\(profitPercentage > 0 ? "+" : "")\(profitPercentage, specifier: "%.2f")%")
-                                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                            .foregroundColor(profitPercentage > 0 ? .green.opacity(0.8) : (profitPercentage < 0 ? .red.opacity(0.8) : .gray))
+                                    if let percentage = profitPercentage {
+                                        HStack(spacing: 4) {
+                                            Text("\(percentage > 0 ? "+" : "")\(percentage, specifier: "%.2f")%")
+                                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                                .foregroundColor(percentage > 0 ? .green.opacity(0.8) : (percentage < 0 ? .red.opacity(0.8) : .gray))
+                                        }
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.gray.opacity(0.05))
+                                        .cornerRadius(4)
                                     }
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.gray.opacity(0.05))
-                                    .cornerRadius(4)
                                 }
                             }
                         }
