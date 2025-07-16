@@ -1,11 +1,3 @@
-//
-//  DirectRateInputDialog.swift
-//  Aromex_V2
-//
-//  Created by Ansh Bajaj on 13/07/25.
-//
-
-
 import SwiftUI
 import FirebaseFirestore
 
@@ -60,12 +52,12 @@ struct DirectRateInputDialog: View {
                         .font(.system(size: 24))
                         .foregroundColor(.orange)
                     
-                    Text("Exchange Rate Required")
+                    Text("Direct Exchange Rate Required")
                         .font(.system(size: shouldUseVerticalLayout ? 20 : 24, weight: .bold, design: .serif))
                         .foregroundColor(mainColor)
                 }
                 
-                Text("We need the direct exchange rate between these currencies")
+                Text("Please provide the direct exchange rate between these currencies")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.secondary)
             }
@@ -127,7 +119,7 @@ struct DirectRateInputDialog: View {
             
             // Rate Input Section
             VStack(alignment: .leading, spacing: 12) {
-                Text("Exchange Rate")
+                Text("Direct Exchange Rate")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(mainColor)
                 
@@ -182,7 +174,7 @@ struct DirectRateInputDialog: View {
                             .foregroundColor(.red)
                     }
                     
-                    Text("Enter the current market rate for 1 \(givingCurrency.name)")
+                    Text("Enter the current direct rate from \(givingCurrency.name) to \(receivingCurrency.name)")
                         .font(.system(size: 12, weight: .regular))
                         .foregroundColor(.secondary)
                 }
@@ -195,12 +187,12 @@ struct DirectRateInputDialog: View {
                         .font(.system(size: 14))
                         .foregroundColor(.blue)
                     
-                    Text("This rate will be saved for future transactions")
+                    Text("This rate will be saved for future use")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.blue)
                 }
                 
-                Text("We'll use this rate for all future exchanges between \(givingCurrency.name) and \(receivingCurrency.name). You can update it later from the Exchange Rates dialog.")
+                Text("We'll store this direct exchange rate and use it for all future transactions between \(givingCurrency.name) and \(receivingCurrency.name). You can update it later if needed.")
                     .font(.system(size: 12, weight: .regular))
                     .foregroundColor(.secondary)
             }

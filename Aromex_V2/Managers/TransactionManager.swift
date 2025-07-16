@@ -30,6 +30,37 @@ class TransactionManager: ObservableObject {
             }
     }
     
+    // Add this method to your TransactionManager class
+
+    private func calculateExchangeRate(
+        givingCurrency: Currency,
+        receivingCurrency: Currency
+    ) async -> Double {
+        // If either currency is CAD/USD, use existing calculation
+        if givingCurrency.name == "CAD" || receivingCurrency.name == "CAD" {
+            return (1.0 / givingCurrency.exchangeRate) * receivingCurrency.exchangeRate
+        }
+        
+        // For non-USD pairs, get direct rate
+        do {
+            if let directRate = try await CurrencyManager.shared.getDirectExchangeRate(
+                from: givingCurrency.name,
+                to: receivingCurrency.name
+            ) {
+                return directRate
+            }
+        } catch {
+            print("❌ Error getting direct exchange rate: \(error)")
+        }
+        
+        // Fallback to USD-based calculation if direct rate not available
+        return (1.0 / givingCurrency.exchangeRate) * receivingCurrency.exchangeRate
+    }
+
+    // Modify your processExchangeTransaction method to use this:
+    // Replace the market rate calculation line with:
+    // let marketRate = await calculateExchangeRate(givingCurrency: givingCurrency, receivingCurrency: receivingCurrency)
+    
     private func handleTransactionsUpdate(querySnapshot: QuerySnapshot?, error: Error?) {
         DispatchQueue.main.async {
             if let error = error {

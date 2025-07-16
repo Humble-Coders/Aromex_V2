@@ -236,6 +236,9 @@ struct AddEntryView: View {
     
     @State private var showingProfitBreakdown: Bool = false
     @State private var totalProfitInUSD: Double = 0.0
+    
+    @State private var showingDirectRateDialog = false
+    @State private var pendingDirectRateCallback: ((Double) -> Void)?
 
     private var hasActiveFilters: Bool {
         return !transactionSearchText.isEmpty ||
@@ -681,6 +684,32 @@ struct AddEntryView: View {
         // Add this to monitor transaction changes
         .onReceive(mixedTransactionManager.$mixedTransactions) { _ in
             applyTransactionFilters()
+        }
+        .sheet(isPresented: $showingDirectRateDialog) {
+            if let givingCurrency = currencyManager.selectedCurrency,
+               let receivingCurrency = selectedReceivingCurrency {
+                DirectRateInputDialog(
+                    givingCurrency: givingCurrency,
+                    receivingCurrency: receivingCurrency,
+                    onRateProvided: { providedRate in
+                        print("✅ Rate provided from dialog: \(providedRate)")
+                        showingDirectRateDialog = false
+                        pendingDirectRateCallback?(providedRate)
+                        
+                        // Force refresh the currency manager to pick up the new rate
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            currencyManager.fetchDirectExchangeRates()
+                        }
+                    },
+                    onCancel: {
+                        print("❌ Dialog cancelled")
+                        showingDirectRateDialog = false
+                        // Clear the rate field since user cancelled
+                        customExchangeRate = ""
+                    }
+                )
+                .environmentObject(currencyManager)
+            }
         }
     }
     
@@ -1450,13 +1479,14 @@ struct AddEntryView: View {
     }
 
     // Compact Exchange Rate Field
+    // Replace your exchangeRateCompactField with this debugging version:
     private var exchangeRateCompactField: some View {
         HStack(spacing: 8) {
             // 1 Currency =
             HStack(spacing: 4) {
                 Text("1")
                     .font(.system(size: 14, weight: .semibold))
-                Text(currencyManager.selectedCurrency?.name ?? "CAD")
+                Text(currencyManager.selectedCurrency?.name ?? "USD")
                     .font(.system(size: 12, weight: .medium))
                 Text("=")
                     .font(.system(size: 14, weight: .semibold))
@@ -1467,23 +1497,35 @@ struct AddEntryView: View {
             .background(Color.gray.opacity(0.1))
             .cornerRadius(6)
             
-            // Rate Input
-            TextField("Rate", text: $customExchangeRate)
-                .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                #if os(iOS)
-                .keyboardType(.decimalPad)
-                #endif
-                .padding(.horizontal, 8)
-                .frame(width: 60, height: 44)
-                .background(Color.white)
-                .cornerRadius(6)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                )
+            // Rate Input with debugging
+            TextField("Rate", text: Binding(
+                get: { customExchangeRate },
+                set: { newValue in
+                    print("🎯 Rate input changed to: '\(newValue)'")
+                    print("🎯 Exchange toggle is: \(isExchangeOn)")
+                    print("🎯 Giving currency: \(currencyManager.selectedCurrency?.name ?? "nil")")
+                    print("🎯 Receiving currency: \(selectedReceivingCurrency?.name ?? "nil")")
+                    handleExchangeRateInputChange(newValue)
+                }
+            ))
+            .font(.system(size: 14, weight: .semibold, design: .monospaced))
+            #if os(iOS)
+            .keyboardType(.decimalPad)
+            #endif
+            .padding(.horizontal, 8)
+            .frame(width: 60, height: 44)
+            .background(Color.white)
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+            )
             
             // Receiving Currency
-            Button(action: { showReceivingCurrencyDropdown.toggle() }) {
+            Button(action: {
+                showReceivingCurrencyDropdown.toggle()
+                print("🎯 Receiving currency dropdown toggled")
+            }) {
                 Text(selectedReceivingCurrency?.name ?? "Select")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.white)
@@ -1558,25 +1600,62 @@ struct AddEntryView: View {
         .cornerRadius(6)
     }
 
-    // ADDED: Missing calculateMarketRate function
-    private func calculateMarketRate(from: Currency, to: Currency) -> Double {
-        // Both currencies have exchange rates relative to USD
-        // To convert from currency A to currency B:
-        // 1 A = (1 / A.exchangeRate) USD = (1 / A.exchangeRate) * B.exchangeRate B
+    private func calculateMarketRate(from: Currency, to: Currency) -> Double? {
+        // Check if we need direct rate
+        if currencyManager.requiresDirectRate(givingCurrency: from, receivingCurrency: to) {
+            return currencyManager.getDirectExchangeRate(from: from.name, to: to.name)
+        }
+        
+        // Use existing USD-based calculation
         return (1.0 / from.exchangeRate) * to.exchangeRate
     }
 
-    // Exchange Profit/Loss Display
+    // Add these methods to your AddEntryView:
+
+    private func handleExchangeRateInputChange(_ newValue: String) {
+        customExchangeRate = newValue
+        
+        // Only proceed if user actually typed something
+        guard !newValue.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return
+        }
+        
+        // Check if both currencies are selected
+        guard let givingCurrency = currencyManager.selectedCurrency,
+              let receivingCurrency = selectedReceivingCurrency else {
+            print("⚠️ Missing currencies")
+            return
+        }
+        
+        print("🔍 Checking currencies: \(givingCurrency.name) → \(receivingCurrency.name)")
+        
+        // Check if both are non-USD
+        let bothNonUSD = givingCurrency.name != "USD" && receivingCurrency.name != "USD"
+        
+        if bothNonUSD {
+            // Check if we already have this direct rate
+            let existingRate = currencyManager.getDirectExchangeRate(from: givingCurrency.name, to: receivingCurrency.name)
+            
+            if existingRate == nil {
+                print("🚨 Direct rate required! Showing dialog...")
+                showingDirectRateDialog = true
+                pendingDirectRateCallback = { providedRate in
+                    print("✅ Direct rate provided: \(providedRate)")
+                }
+            }
+        }
+    }
+
     private var exchangeProfitLossDisplay: some View {
-        Group {
+        VStack {
             if let givingCurrency = currencyManager.selectedCurrency,
                let receivingCurrency = selectedReceivingCurrency,
                let customRate = Double(customExchangeRate.trimmingCharacters(in: .whitespaces)),
                let transactionAmount = Double(amount.trimmingCharacters(in: .whitespaces)),
-               customRate > 0 && transactionAmount > 0 {
+               customRate > 0 && transactionAmount > 0,
+               let actualMarketRate = getMarketRate2(from: givingCurrency, to: receivingCurrency) {
                 
-                let marketRate = calculateMarketRate(from: givingCurrency, to: receivingCurrency)
-                let profitRate = customRate - marketRate
+                let profitRate = customRate - actualMarketRate
                 let totalProfitLoss = profitRate * transactionAmount
                 
                 HStack(spacing: 20) {
@@ -1585,7 +1664,7 @@ struct AddEntryView: View {
                         Text("Market Rate")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.secondary)
-                        Text("1 \(givingCurrency.name) = \(marketRate, specifier: "%.4f") \(receivingCurrency.name)")
+                        Text("1 \(givingCurrency.name) = \(actualMarketRate, specifier: "%.4f") \(receivingCurrency.name)")
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundColor(.secondary)
                     }
@@ -1633,6 +1712,13 @@ struct AddEntryView: View {
         }
     }
 
+    private func getMarketRate2(from givingCurrency: Currency, to receivingCurrency: Currency) -> Double? {
+        if currencyManager.requiresDirectRate(givingCurrency: givingCurrency, receivingCurrency: receivingCurrency) {
+            return currencyManager.getDirectExchangeRate(from: givingCurrency.name, to: receivingCurrency.name)
+        } else {
+            return (1.0 / givingCurrency.exchangeRate) * receivingCurrency.exchangeRate
+        }
+    }
     // Notes Row
     private var notesRow: some View {
         HStack(spacing: 12) {
@@ -1654,12 +1740,18 @@ struct AddEntryView: View {
         .padding(.horizontal, 20)
     }
 
-    // Helper computed property
+    // Replace your shouldShowExchangeDetails computed property:
     private var shouldShowExchangeDetails: Bool {
-        return !customExchangeRate.trimmingCharacters(in: .whitespaces).isEmpty &&
-               !amount.trimmingCharacters(in: .whitespaces).isEmpty &&
-               selectedReceivingCurrency != nil &&
-               currencyManager.selectedCurrency != nil
+        guard !customExchangeRate.trimmingCharacters(in: .whitespaces).isEmpty,
+              !amount.trimmingCharacters(in: .whitespaces).isEmpty,
+              let receivingCurrency = selectedReceivingCurrency,
+              let givingCurrency = currencyManager.selectedCurrency else {
+            return false
+        }
+        
+        // Always show the exchange details section, but the content inside will handle
+        // whether to show profit calculation or "rate required" message
+        return true
     }
     
     private var statusIndicators: some View {
@@ -2140,6 +2232,7 @@ struct AddEntryView: View {
         }
     }
 
+    // Replace the calculateTotalExchangeProfit function in AddEntryView:
     private func calculateTotalExchangeProfit() {
         var profitByCurrency: [String: Double] = [:]
         var totalUSDProfit: Double = 0.0
@@ -2176,17 +2269,30 @@ struct AddEntryView: View {
             
             let givingCurrencyName = transaction.currencyName
             
-            // Find current exchange rates
+            // Find current currencies
             let givingCurrency = currencyManager.allCurrencies.first { $0.name == givingCurrencyName }
             let receivingCurrency = currencyManager.allCurrencies.first { $0.name == receivingCurrencyName }
             
-            guard let givingRate = givingCurrency?.exchangeRate,
-                  let receivingRate = receivingCurrency?.exchangeRate else {
+            guard let givingCurr = givingCurrency,
+                  let receivingCurr = receivingCurrency else {
                 continue
             }
             
+            var currentMarketRate: Double
+            
+            // Check if we need direct rate
+            if currencyManager.requiresDirectRate(givingCurrency: givingCurr, receivingCurrency: receivingCurr) {
+                // Use direct rate
+                guard let directRate = currencyManager.getDirectExchangeRate(from: givingCurrencyName, to: receivingCurrencyName) else {
+                    continue // Skip if no direct rate available
+                }
+                currentMarketRate = directRate
+            } else {
+                // Use USD-based calculation
+                currentMarketRate = (1.0 / givingCurr.exchangeRate) * receivingCurr.exchangeRate
+            }
+            
             // Calculate current profit for this transaction
-            let currentMarketRate = (1.0 / givingRate) * receivingRate
             let profitRate = customRate - currentMarketRate
             let transactionProfit = profitRate * transaction.amount
             
@@ -2194,14 +2300,14 @@ struct AddEntryView: View {
             profitByCurrency[receivingCurrencyName] = (profitByCurrency[receivingCurrencyName] ?? 0) + transactionProfit
             
             // Convert profit to USD using market rate
-            let profitInUSD = transactionProfit / receivingRate
+            let profitInUSD = transactionProfit / receivingCurr.exchangeRate
             totalUSDProfit += profitInUSD
         }
         
         totalExchangeProfit = profitByCurrency
         totalProfitInUSD = totalUSDProfit
         print("💰 Total Exchange Profit (\(selectedProfitTimeframe.rawValue)): \(profitByCurrency)")
-        print("💵 Total Profit in CAD: $\(totalUSDProfit)")
+        print("💵 Total Profit in USD: $\(totalUSDProfit)")
     }
     private func clearForm() {
         selectedFromCustomer = nil
@@ -2625,6 +2731,7 @@ struct TransactionRowView: View {
         }
     }
     // Dynamic profit calculation using current exchange rates
+    // Replace the dynamicProfitData computed property in TransactionRowView:
     private var dynamicProfitData: (profit: Double, currency: String)? {
         guard transaction.isExchange,
               let customRate = transaction.customExchangeRate,
@@ -2634,17 +2741,29 @@ struct TransactionRowView: View {
         
         let givingCurrencyName = transaction.currencyName
         
-        // Find current exchange rates from currencyManager
+        // Find currencies from currencyManager
         let givingCurrency = currencyManager.allCurrencies.first { $0.name == givingCurrencyName }
         let receivingCurrency = currencyManager.allCurrencies.first { $0.name == receivingCurrencyName }
         
-        guard let givingRate = givingCurrency?.exchangeRate,
-              let receivingRate = receivingCurrency?.exchangeRate else {
+        guard let givingCurr = givingCurrency,
+              let receivingCurr = receivingCurrency else {
             return nil
         }
         
-        // Calculate current market rate
-        let currentMarketRate = (1.0 / givingRate) * receivingRate
+        var currentMarketRate: Double
+        
+        // Check if we need direct rate
+        if currencyManager.requiresDirectRate(givingCurrency: givingCurr, receivingCurrency: receivingCurr) {
+            // Use direct rate
+            guard let directRate = currencyManager.getDirectExchangeRate(from: givingCurrencyName, to: receivingCurrencyName) else {
+                return nil // No direct rate available
+            }
+            currentMarketRate = directRate
+        } else {
+            // Use USD-based calculation
+            currentMarketRate = (1.0 / givingCurr.exchangeRate) * receivingCurr.exchangeRate
+        }
+        
         let profitRate = customRate - currentMarketRate
         let totalProfit = profitRate * transaction.amount
         
