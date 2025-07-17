@@ -1718,27 +1718,52 @@ struct AddEntryView: View {
     }
     
     // MARK: - Exchange Rate Helper Methods
-    private func getBiggerCurrency(from currency1: Currency, to currency2: Currency) -> Currency {
-        // Compare exchange rates (higher rate means smaller value currency)
-        // So we want the currency with LOWER exchange rate on the left (bigger value)
-        return currency1.exchangeRate <= currency2.exchangeRate ? currency1 : currency2
-    }
+//    private func getBiggerCurrency(from currency1: Currency, to currency2: Currency) -> Currency {
+//        // Currency with LOWER exchange rate has HIGHER value (is "bigger")
+//        // Because lower exchangeRate means fewer units needed to equal 1 CAD
+//        return currency1.exchangeRate <= currency2.exchangeRate ? currency1 : currency2
+//    }
+//
+//    private func getSmallerCurrency(from currency1: Currency, to currency2: Currency) -> Currency {
+//        // Currency with HIGHER exchange rate has LOWER value (is "smaller")
+//        // Because higher exchangeRate means more units needed to equal 1 CAD
+//        return currency1.exchangeRate > currency2.exchangeRate ? currency1 : currency2
+//    }
 
-    private func getSmallerCurrency(from currency1: Currency, to currency2: Currency) -> Currency {
-        // Return the currency with higher exchange rate (smaller value)
-        return currency1.exchangeRate > currency2.exchangeRate ? currency1 : currency2
+    private func getBiggerCurrencyFallback(from currency1: Currency, to currency2: Currency) -> (left: Currency, right: Currency) {
+        // Use the original logic as fallback
+        let biggerCurrency = currency1.exchangeRate <= currency2.exchangeRate ? currency1 : currency2
+        let smallerCurrency = currency1.exchangeRate > currency2.exchangeRate ? currency1 : currency2
+        return (left: biggerCurrency, right: smallerCurrency)
     }
-
+    
     private func getDisplayCurrencies() -> (left: Currency, right: Currency)? {
         guard let givingCurrency = currencyManager.selectedCurrency,
               let receivingCurrency = selectedReceivingCurrency else {
             return nil
         }
         
-        let biggerCurrency = getBiggerCurrency(from: givingCurrency, to: receivingCurrency)
-        let smallerCurrency = getSmallerCurrency(from: givingCurrency, to: receivingCurrency)
+        // Get both possible rates from DirectExchangeRates
+        let rate1 = currencyManager.getDirectExchangeRate(from: givingCurrency.name, to: receivingCurrency.name)
+        let rate2 = currencyManager.getDirectExchangeRate(from: receivingCurrency.name, to: givingCurrency.name)
         
-        return (left: biggerCurrency, right: smallerCurrency)
+        // Determine which direction gives us a rate >= 1.0
+        if let directRate = rate1, directRate >= 1.0 {
+            // 1 givingCurrency = directRate receivingCurrency (rate >= 1)
+            return (left: givingCurrency, right: receivingCurrency)
+        } else if let reverseRate = rate2, reverseRate >= 1.0 {
+            // 1 receivingCurrency = reverseRate givingCurrency (rate >= 1)
+            return (left: receivingCurrency, right: givingCurrency)
+        } else if let directRate = rate1 {
+            // Use direct rate even if < 1 (fallback)
+            return (left: givingCurrency, right: receivingCurrency)
+        } else if let reverseRate = rate2 {
+            // Use reverse rate even if < 1 (fallback)
+            return (left: receivingCurrency, right: givingCurrency)
+        } else {
+            // No direct rates available, fallback to original logic
+            return getBiggerCurrencyFallback(from: givingCurrency, to: receivingCurrency)
+        }
     }
 
     private func convertRateForCalculation(displayRate: Double) -> Double {
@@ -1836,8 +1861,11 @@ struct AddEntryView: View {
     private func getDisplayMarketRate() -> Double? {
         guard let displayCurrencies = getDisplayCurrencies() else { return nil }
         
-        // Always get market rate from DirectExchangeRates collection
-        return getMarketRateFromDirectRates(from: displayCurrencies.left, to: displayCurrencies.right)
+        // Simply fetch the rate in the display direction
+        return currencyManager.getDirectExchangeRate(
+            from: displayCurrencies.left.name,
+            to: displayCurrencies.right.name
+        )
     }
 
     private func getMarketRateForDisplay() -> Double? {
@@ -1846,6 +1874,19 @@ struct AddEntryView: View {
         let marketRate = getMarketRate2(from: displayCurrencies.left, to: displayCurrencies.right)
         return marketRate
     }
+    
+    private func getActualTransactionMarketRate(from givingCurrency: Currency, to receivingCurrency: Currency) -> Double? {
+        // Always get the rate in the actual transaction direction
+        if let directRate = currencyManager.getDirectExchangeRate(from: givingCurrency.name, to: receivingCurrency.name) {
+            return directRate
+        } else if let reverseRate = currencyManager.getDirectExchangeRate(from: receivingCurrency.name, to: givingCurrency.name) {
+            return 1.0 / reverseRate
+        } else {
+            return nil
+        }
+    }
+
+    // Replace the exchange profit calculation logic in AddEntryView.swift
 
     private var exchangeProfitLossDisplay: some View {
         VStack {
@@ -1856,21 +1897,49 @@ struct AddEntryView: View {
                displayRate > 0 && transactionAmount > 0,
                let displayCurrencies = getDisplayCurrencies() {
                 
-                // Get market rate from DirectExchangeRates only
-                let displayMarketRate = getDisplayMarketRate()
+                // Get display market rate (for showing to user)
+                let displayMarketRate = currencyManager.getDirectExchangeRate(
+                    from: displayCurrencies.left.name,
+                    to: displayCurrencies.right.name
+                )
                 
-                if let actualDisplayMarketRate = displayMarketRate {
-                    // Calculate profit in display terms (bigger currency = smaller currency)
-                    let displayProfitRate = displayRate - actualDisplayMarketRate
+                // Get actual transaction market rate (giving -> receiving direction)
+                let transactionMarketRate = currencyManager.getDirectExchangeRate(
+                    from: givingCurrency.name,
+                    to: receivingCurrency.name
+                ) ?? {
+                    // If direct rate doesn't exist, try reverse and invert
+                    if let reverseRate = currencyManager.getDirectExchangeRate(
+                        from: receivingCurrency.name,
+                        to: givingCurrency.name
+                    ) {
+                        return 1.0 / reverseRate
+                    }
+                    return nil
+                }()
+                
+                // Get actual transaction custom rate (what user entered in transaction direction)
+                let transactionCustomRate: Double = {
+                    // Check if display direction matches transaction direction
+                    if displayCurrencies.left.name == givingCurrency.name &&
+                       displayCurrencies.right.name == receivingCurrency.name {
+                        // Display and transaction are same direction
+                        return displayRate
+                    } else {
+                        // Display is opposite to transaction direction, so invert
+                        return 1.0 / displayRate
+                    }
+                }()
+                
+                if let actualDisplayMarketRate = displayMarketRate,
+                   let actualTransactionMarketRate = transactionMarketRate {
                     
-                    // For profit calculation, convert to actual transaction direction
-                    let actualCustomRate = convertRateForCalculation(displayRate: displayRate)
-                    let actualMarketRate = getMarketRateFromDirectRates(from: givingCurrency, to: receivingCurrency) ?? 0
-                    let actualProfitRate = actualCustomRate - actualMarketRate
+                    // Calculate profit using actual transaction rates
+                    let actualProfitRate = transactionCustomRate - actualTransactionMarketRate
                     let totalProfitLoss = actualProfitRate * transactionAmount
                     
                     HStack(spacing: 20) {
-                        // Market Rate (shown in display format)
+                        // Market Rate (shown in display format for UX)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Market Rate")
                                 .font(.system(size: 10, weight: .semibold))
@@ -1882,7 +1951,7 @@ struct AddEntryView: View {
                         
                         Spacer()
                         
-                        // Profit/Loss (shown in receiving currency)
+                        // Profit/Loss (shown in receiving currency of actual transaction)
                         if abs(totalProfitLoss) >= 0.01 {
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text(totalProfitLoss > 0 ? "Your Profit" : "Your Loss")
@@ -1919,8 +1988,33 @@ struct AddEntryView: View {
                     .padding(.vertical, 12)
                     .background(Color.orange.opacity(0.05))
                     .cornerRadius(10)
+                    
+                    // Debug info (remove in production)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Debug Info:")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.blue)
+                        Text("Transaction: \(givingCurrency.name) → \(receivingCurrency.name)")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                        Text("Display: \(displayCurrencies.left.name) → \(displayCurrencies.right.name)")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                        Text("User Rate (display): \(displayRate, specifier: "%.4f")")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                        Text("User Rate (transaction): \(transactionCustomRate, specifier: "%.4f")")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                        Text("Market Rate (transaction): \(actualTransactionMarketRate, specifier: "%.4f")")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.top, 8)
+                    .padding(.horizontal, 16)
+                    
                 } else {
-                    // No market rate available - show message
+                    // No market rate available
                     VStack(spacing: 8) {
                         HStack {
                             Image(systemName: "exclamationmark.triangle")
@@ -3105,6 +3199,10 @@ struct TransactionRowView: View {
     @EnvironmentObject var firebaseManager: FirebaseManager
     @EnvironmentObject var navigationManager: CustomerNavigationManager
     
+    @State private var showingDeleteConfirmation = false
+    @State private var isDeleting = false
+    @State private var deleteError = ""
+    
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM dd, yyyy"
@@ -3134,13 +3232,12 @@ struct TransactionRowView: View {
     }
     
     private func navigateToCustomer(id: String, name: String) {
-        // Find the customer in the firebaseManager
         if let customer = firebaseManager.customers.first(where: { $0.id == id }) {
             navigationManager.navigateToCustomer(customer)
         }
     }
+    
     private func calculateProfitPercentage(customRate: Double, givingCurrency: String, receivingCurrency: String) -> Double? {
-        // Get market rate from DirectExchangeRates only
         let marketRate: Double?
         
         if let directRate = currencyManager.getDirectExchangeRate(from: givingCurrency, to: receivingCurrency) {
@@ -3148,7 +3245,7 @@ struct TransactionRowView: View {
         } else if let reverseRate = currencyManager.getDirectExchangeRate(from: receivingCurrency, to: givingCurrency) {
             marketRate = 1.0 / reverseRate
         } else {
-            return nil // No market rate available
+            return nil
         }
         
         guard let actualMarketRate = marketRate, actualMarketRate > 0 else {
@@ -3158,30 +3255,23 @@ struct TransactionRowView: View {
         let profitPercentage = ((customRate - actualMarketRate) / actualMarketRate) * 100
         return profitPercentage
     }
+    
     private func getCADConversionFromDirectRates(amount: Double, fromCurrency: String) -> Double? {
-        // If it's already CAD, return as is
         if fromCurrency == "CAD" {
             return amount
         }
         
-        // Try direct rate from currency to CAD
         if let directRate = currencyManager.getDirectExchangeRate(from: fromCurrency, to: "CAD") {
             return amount * directRate
         }
         
-        // Try reverse rate (CAD to currency) and invert
         if let reverseRate = currencyManager.getDirectExchangeRate(from: "CAD", to: fromCurrency) {
             return amount / reverseRate
         }
         
-        // No direct rate available
         return nil
     }
-    // Dynamic profit calculation using current exchange rates
-    // Replace the dynamicProfitData computed property in TransactionRowView:
-    // MARK: - Updated TransactionRowView dynamicProfitData
-    // Replace the dynamicProfitData computed property in TransactionRowView with this:
-
+    
     private var dynamicProfitData: (profit: Double, currency: String)? {
         guard transaction.isExchange,
               let customRate = transaction.customExchangeRate,
@@ -3191,7 +3281,6 @@ struct TransactionRowView: View {
         
         let givingCurrencyName = transaction.currencyName
         
-        // Find currencies from currencyManager
         let givingCurrency = currencyManager.allCurrencies.first { $0.name == givingCurrencyName }
         let receivingCurrency = currencyManager.allCurrencies.first { $0.name == receivingCurrencyName }
         
@@ -3200,17 +3289,14 @@ struct TransactionRowView: View {
             return nil
         }
         
-        // Always get market rate from DirectExchangeRates only
         let currentMarketRate: Double?
         
-        // First try direct rate
         if let directRate = currencyManager.getDirectExchangeRate(from: givingCurrencyName, to: receivingCurrencyName) {
             currentMarketRate = directRate
         } else if let reverseRate = currencyManager.getDirectExchangeRate(from: receivingCurrencyName, to: givingCurrencyName) {
-            // Use reverse rate if available
             currentMarketRate = 1.0 / reverseRate
         } else {
-            return nil // No direct rate available
+            return nil
         }
         
         guard let actualMarketRate = currentMarketRate else {
@@ -3225,7 +3311,7 @@ struct TransactionRowView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Header Row (keeping as is)
+            // Header Row with Delete Button
             HStack(spacing: 0) {
                 Text("Date & Time")
                     .font(.caption)
@@ -3240,7 +3326,7 @@ struct TransactionRowView: View {
                     .font(.caption)
                     .fontWeight(.semibold)
                     .foregroundColor(.secondary)
-                    .frame(width: 280, alignment: .leading)
+                    .frame(width: 240, alignment: .leading)
                     .padding(.horizontal, 12)
                 
                 Divider().frame(height: 20)
@@ -3268,6 +3354,16 @@ struct TransactionRowView: View {
                     .fontWeight(.semibold)
                     .foregroundColor(.secondary)
                     .frame(width: 140, alignment: .leading)
+                    .padding(.horizontal, 12)
+                
+                Divider().frame(height: 20)
+                
+                // Delete Button Column Header
+                Text("Actions")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
+                    .frame(width: 80, alignment: .center)
                     .padding(.horizontal, 12)
             }
             .padding(.vertical, 4)
@@ -3307,7 +3403,7 @@ struct TransactionRowView: View {
                 
                 Divider()
                 
-                // COLUMN 2: Transaction Details - Reduced Sizes
+                // COLUMN 2: Transaction Details - Reduced width to accommodate delete button
                 VStack(alignment: .leading, spacing: 16) {
                     // Amount Section
                     HStack(spacing: 16) {
@@ -3346,7 +3442,7 @@ struct TransactionRowView: View {
                         }
                     }
                     
-                    // Participants Section - Enhanced Highlighting
+                    // Participants Section
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Transaction Flow")
                             .font(.system(size: 8, weight: .medium))
@@ -3371,7 +3467,7 @@ struct TransactionRowView: View {
                                     Text(transaction.giverName)
                                         .font(.system(size: 11, weight: .semibold))
                                         .foregroundColor(transaction.giver == "myself_special_id" ? .blue : .primary)
-                                        .underline(transaction.giver != "myself_special_id") // Underline for non-myself customers
+                                        .underline(transaction.giver != "myself_special_id")
                                 }
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
@@ -3389,7 +3485,7 @@ struct TransactionRowView: View {
                                 )
                             }
                             .buttonStyle(PlainButtonStyle())
-                            .disabled(transaction.giver == "myself_special_id") // Disable click for "Myself"
+                            .disabled(transaction.giver == "myself_special_id")
                             
                             Image(systemName: "arrow.right")
                                 .font(.system(size: 10, weight: .medium))
@@ -3413,7 +3509,7 @@ struct TransactionRowView: View {
                                     Text(transaction.takerName)
                                         .font(.system(size: 11, weight: .semibold))
                                         .foregroundColor(transaction.taker == "myself_special_id" ? .blue : .primary)
-                                        .underline(transaction.taker != "myself_special_id") // Underline for non-myself customers
+                                        .underline(transaction.taker != "myself_special_id")
                                 }
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
@@ -3431,22 +3527,22 @@ struct TransactionRowView: View {
                                 )
                             }
                             .buttonStyle(PlainButtonStyle())
-                            .disabled(transaction.taker == "myself_special_id") // Disable click for "Myself"
+                            .disabled(transaction.taker == "myself_special_id")
                             
                             Spacer()
                         }
                     }
                 }
-                .frame(width: 280, alignment: .leading)
+                .frame(width: 240, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 16)
                 
                 Divider()
                 
-                // COLUMN 3: Exchange Info - One Line Layout
+                // COLUMN 3: Exchange Info
                 VStack(alignment: .leading, spacing: 8) {
                     if transaction.isExchange {
-                        // Exchange Rate with Currency Names
+                        // Exchange Rate
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Exchange Rate")
                                 .font(.system(size: 10, weight: .medium))
@@ -3469,11 +3565,10 @@ struct TransactionRowView: View {
                             }
                         }
                         
-                        // Current Profit Display with DirectExchangeRates CAD Conversion
+                        // Current Profit Display
                         if let profit = dynamicProfitData?.profit,
                            let profitCurrency = dynamicProfitData?.currency {
                             VStack(alignment: .leading, spacing: 4) {
-                                // Profit amount
                                 HStack(spacing: 8) {
                                     Text(profit > 0 ? "Current Profit:" : (profit < 0 ? "Current Loss:" : "Break Even:"))
                                         .font(.system(size: 9, weight: .medium))
@@ -3488,7 +3583,7 @@ struct TransactionRowView: View {
                                 .background((profit > 0 ? Color.green : (profit < 0 ? Color.red : Color.gray)).opacity(0.08))
                                 .cornerRadius(6)
                                 
-                                // CAD Conversion using DirectExchangeRates only
+                                // CAD Conversion
                                 if profitCurrency != "CAD" {
                                     let profitInCAD = getCADConversionFromDirectRates(amount: profit, fromCurrency: profitCurrency)
                                     
@@ -3508,23 +3603,10 @@ struct TransactionRowView: View {
                                         .padding(.vertical, 2)
                                         .background(Color.gray.opacity(0.05))
                                         .cornerRadius(4)
-                                    } else {
-                                        HStack(spacing: 4) {
-                                            Text("≈")
-                                                .font(.system(size: 8, weight: .medium))
-                                                .foregroundColor(.secondary)
-                                            Text("No CAD rate")
-                                                .font(.system(size: 9, weight: .medium))
-                                                .foregroundColor(.orange)
-                                        }
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color.orange.opacity(0.05))
-                                        .cornerRadius(4)
                                     }
                                 }
                                 
-                                // Profit percentage using DirectExchangeRates
+                                // Profit percentage
                                 if let customRate = transaction.customExchangeRate {
                                     let profitPercentage = calculateProfitPercentage(
                                         customRate: customRate,
@@ -3573,9 +3655,8 @@ struct TransactionRowView: View {
                 
                 Divider()
                 
-                // COLUMN 4: Giver Balances - Enhanced Padding
+                // COLUMN 4: Giver Balances
                 VStack(alignment: .leading, spacing: 10) {
-                    // Header
                     HStack(spacing: 4) {
                         if transaction.giver == "myself_special_id" {
                             Image(systemName: "person.circle")
@@ -3593,7 +3674,6 @@ struct TransactionRowView: View {
                             .lineLimit(1)
                     }
                     
-                    // Balance list
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(Array(giverBalances.keys.sorted()), id: \.self) { currencyKey in
                             if let balance = giverBalances[currencyKey] {
@@ -3623,9 +3703,8 @@ struct TransactionRowView: View {
                 
                 Divider()
                 
-                // COLUMN 5: Taker Balances - Enhanced Padding
+                // COLUMN 5: Taker Balances
                 VStack(alignment: .leading, spacing: 10) {
-                    // Header
                     HStack(spacing: 4) {
                         if transaction.taker == "myself_special_id" {
                             Image(systemName: "person.circle")
@@ -3643,7 +3722,6 @@ struct TransactionRowView: View {
                             .lineLimit(1)
                     }
                     
-                    // Balance list
                     VStack(alignment: .leading, spacing: 6) {
                         ForEach(Array(takerBalances.keys.sorted()), id: \.self) { currencyKey in
                             if let balance = takerBalances[currencyKey] {
@@ -3670,6 +3748,58 @@ struct TransactionRowView: View {
                 .frame(width: 140, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 16)
+                
+                Divider()
+                
+                // COLUMN 6: Delete Button
+                VStack(alignment: .center, spacing: 8) {
+                    if isDeleting {
+                        VStack(spacing: 4) {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Deleting...")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button(action: {
+                            showingDeleteConfirmation = true
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: "trash.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.white)
+                                
+                                Text("Delete")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 8)
+                            .background(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [Color.red, Color.red.opacity(0.8)]),
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .cornerRadius(8)
+                            .shadow(color: .red.opacity(0.3), radius: 3, x: 0, y: 2)
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                    
+                    if !deleteError.isEmpty {
+                        Text(deleteError)
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                    }
+                }
+                .frame(width: 80, alignment: .center)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 16)
             }
             .background(
                 RoundedRectangle(cornerRadius: 12)
@@ -3684,8 +3814,191 @@ struct TransactionRowView: View {
             .padding(.horizontal, 2)
         }
         .onAppear {
-            // Ensure currency manager fetches latest rates when row appears
             currencyManager.fetchCurrencies()
         }
+        .alert("Delete Transaction", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                deleteTransaction()
+            }
+        } message: {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Are you sure you want to delete this transaction?")
+                Text("This will:")
+                Text("• Delete the transaction record")
+                Text("• Reverse all balance changes")
+                Text("• Update affected customer balances")
+                Text("This action cannot be undone.")
+            }
+        }
+    }
+    
+    private func deleteTransaction() {
+        isDeleting = true
+        deleteError = ""
+        
+        Task {
+            do {
+                try await reverseTransaction()
+                
+                DispatchQueue.main.async {
+                    self.isDeleting = false
+                    // The transaction will automatically disappear from the list
+                    // as the TransactionManager's listener will detect the deletion
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isDeleting = false
+                    self.deleteError = "Failed to delete"
+                }
+            }
+        }
+    }
+    
+    private func reverseTransaction() async throws {
+        let db = Firestore.firestore()
+        let batch = db.batch()
+        
+        print("🔄 Starting transaction reversal for transaction ID: \(transaction.id ?? "unknown")")
+        
+        // Step 1: Reverse balance changes for giver
+        if transaction.giver == "myself_special_id" {
+            // Reverse changes to my cash balance
+            try await reverseMyCashBalance(amount: transaction.amount, currency: transaction.currencyName, batch: batch)
+        } else {
+            // Reverse changes to customer balance
+            try await reverseCustomerBalance(
+                customerId: transaction.giver,
+                amount: transaction.amount,
+                currency: transaction.currencyName,
+                batch: batch
+            )
+        }
+        
+        // Step 2: Reverse balance changes for taker
+        if transaction.taker == "myself_special_id" {
+            // Reverse changes to my cash balance
+            if transaction.isExchange, let receivedAmount = transaction.receivedAmount, let receivingCurrency = transaction.receivingCurrencyName {
+                try await reverseMyCashBalance(amount: receivedAmount, currency: receivingCurrency, batch: batch, isAddition: false)
+            } else {
+                try await reverseMyCashBalance(amount: transaction.amount, currency: transaction.currencyName, batch: batch, isAddition: false)
+            }
+        } else {
+            // Reverse changes to customer balance
+            if transaction.isExchange, let receivedAmount = transaction.receivedAmount, let receivingCurrency = transaction.receivingCurrencyName {
+                try await reverseCustomerBalance(
+                    customerId: transaction.taker,
+                    amount: transaction.amount,
+                    currency: transaction.currencyName,
+                    batch: batch,
+                    isAddition: false
+                )
+            }
+        }
+        
+        // Step 3: Delete the transaction record
+        if let transactionId = transaction.id {
+            let transactionRef = db.collection("CurrencyTransactions").document(transactionId)
+            batch.deleteDocument(transactionRef)
+        }
+        
+        // Step 4: Commit all changes
+        try await batch.commit()
+        print("✅ Transaction reversal completed successfully")
+    }
+    
+    private func reverseMyCashBalance(amount: Double, currency: String, batch: WriteBatch, isAddition: Bool = true) async throws {
+        let db = Firestore.firestore()
+        let balancesRef = db.collection("Balances").document("Cash")
+        
+        // Get current balances
+        let balancesDoc = try await balancesRef.getDocument()
+        var currentData = balancesDoc.data() ?? [:]
+        
+        if currency == "CAD" {
+            // Reverse CAD amount
+            let currentAmount = currentData["amount"] as? Double ?? 0.0
+            let reverseAmount = isAddition ? amount : -amount
+            currentData["amount"] = currentAmount + reverseAmount
+            print("🔄 Reversing my cash CAD: \(currentAmount) + \(reverseAmount) = \(currentAmount + reverseAmount)")
+        } else {
+            // Reverse specific currency field
+            let currentAmount = currentData[currency] as? Double ?? 0.0
+            let reverseAmount = isAddition ? amount : -amount
+            currentData[currency] = currentAmount + reverseAmount
+            print("🔄 Reversing my cash \(currency): \(currentAmount) + \(reverseAmount) = \(currentAmount + reverseAmount)")
+        }
+        
+        // Add timestamp
+        currentData["updatedAt"] = Timestamp()
+        
+        batch.setData(currentData, forDocument: balancesRef, merge: true)
+    }
+    
+    private func reverseCustomerBalance(customerId: String, amount: Double, currency: String, batch: WriteBatch, isAddition: Bool = true) async throws {
+        let db = Firestore.firestore()
+        
+        // Determine which collection this customer belongs to
+        let customerType = try await getCustomerType(customerId: customerId)
+        let collectionName = "\(customerType.rawValue)s"
+        
+        if currency == "CAD" {
+            // Reverse CAD balance in the appropriate collection
+            let customerRef = db.collection(collectionName).document(customerId)
+            
+            let customerDoc = try await customerRef.getDocument()
+            guard customerDoc.exists else {
+                throw NSError(domain: "TransactionError", code: 404, userInfo: [NSLocalizedDescriptionKey: "\(customerType.displayName) not found"])
+            }
+            
+            let currentBalance = customerDoc.data()?["balance"] as? Double ?? 0.0
+            let reverseAmount = isAddition ? amount : -amount
+            let newBalance = currentBalance + reverseAmount
+            
+            print("🔄 Reversing \(customerType.displayName) CAD: \(currentBalance) + \(reverseAmount) = \(newBalance)")
+            batch.updateData(["balance": newBalance, "updatedAt": Timestamp()], forDocument: customerRef)
+        } else {
+            // Reverse non-CAD balance in CurrencyBalances collection
+            let currencyBalanceRef = db.collection("CurrencyBalances").document(customerId)
+            let currencyDoc = try await currencyBalanceRef.getDocument()
+            var currentData = currencyDoc.data() ?? [:]
+            
+            let currentAmount = currentData[currency] as? Double ?? 0.0
+            let reverseAmount = isAddition ? amount : -amount
+            let newAmount = currentAmount + reverseAmount
+            
+            print("🔄 Reversing \(customerType.displayName) \(currency): \(currentAmount) + \(reverseAmount) = \(newAmount)")
+            
+            currentData[currency] = newAmount
+            currentData["updatedAt"] = Timestamp()
+            batch.setData(currentData, forDocument: currencyBalanceRef, merge: true)
+        }
+    }
+    
+    private func getCustomerType(customerId: String) async throws -> CustomerType {
+        let db = Firestore.firestore()
+        
+        // Check in Customers collection first
+        let customersRef = db.collection("Customers").document(customerId)
+        let customersDoc = try await customersRef.getDocument()
+        if customersDoc.exists {
+            return .customer
+        }
+        
+        // Check in Middlemen collection
+        let middlemenRef = db.collection("Middlemen").document(customerId)
+        let middlemenDoc = try await middlemenRef.getDocument()
+        if middlemenDoc.exists {
+            return .middleman
+        }
+        
+        // Check in Suppliers collection
+        let suppliersRef = db.collection("Suppliers").document(customerId)
+        let suppliersDoc = try await suppliersRef.getDocument()
+        if suppliersDoc.exists {
+            return .supplier
+        }
+        
+        throw NSError(domain: "TransactionError", code: 404, userInfo: [NSLocalizedDescriptionKey: "Customer not found in any collection"])
     }
 }

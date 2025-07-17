@@ -1,11 +1,3 @@
-//
-//  SalesTransactionRowView.swift
-//  Aromex_V2
-//
-//  Created by Ansh Bajaj on 12/07/25.
-//
-
-
 import SwiftUI
 import FirebaseFirestore
 
@@ -13,6 +5,10 @@ struct SalesTransactionRowView: View {
     let salesTransaction: SalesTransaction
     @EnvironmentObject var firebaseManager: FirebaseManager
     @EnvironmentObject var navigationManager: CustomerNavigationManager
+    
+    @State private var showingDeleteConfirmation = false
+    @State private var isDeleting = false
+    @State private var deleteError = ""
     
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
@@ -45,6 +41,25 @@ struct SalesTransactionRowView: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.white.opacity(0.9))
                 }
+                
+                // Delete Button in Header
+                if isDeleting {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .foregroundColor(.white)
+                } else {
+                    Button(action: {
+                        showingDeleteConfirmation = true
+                    }) {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(4)
+                            .background(Color.red.opacity(0.3))
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -55,6 +70,22 @@ struct SalesTransactionRowView: View {
                     endPoint: .trailing
                 )
             )
+            
+            // Error Message
+            if !deleteError.isEmpty {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.red)
+                    Text(deleteError)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.red)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(Color.red.opacity(0.1))
+            }
             
             // Main Content
             HStack(spacing: 0) {
@@ -303,14 +334,137 @@ struct SalesTransactionRowView: View {
         )
         .padding(.vertical, 8)
         .padding(.horizontal, 2)
+        .alert("Delete Sales Transaction", isPresented: $showingDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                deleteSalesTransaction()
+            }
+        } message: {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Are you sure you want to delete this sales transaction?")
+                Text("This will:")
+                Text("• Delete the sales record")
+                Text("• Reverse customer balance changes")
+                Text("• Reverse middleman balance changes (if applicable)")
+                Text("This action cannot be undone.")
+            }
+        }
     }
     
     private func navigateToCustomer() {
         guard let customerId = salesTransaction.customerId else { return }
         
-        // Find the customer in the firebaseManager
         if let customer = firebaseManager.customers.first(where: { $0.id == customerId }) {
             navigationManager.navigateToCustomer(customer)
         }
+    }
+    
+    private func deleteSalesTransaction() {
+        isDeleting = true
+        deleteError = ""
+        
+        Task {
+            do {
+                try await reverseSalesTransaction()
+                
+                DispatchQueue.main.async {
+                    self.isDeleting = false
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.isDeleting = false
+                    self.deleteError = "Failed to delete"
+                }
+            }
+        }
+    }
+    
+    private func reverseSalesTransaction() async throws {
+        let db = Firestore.firestore()
+        let batch = db.batch()
+        
+        print("🔄 Starting sales transaction reversal for ID: \(salesTransaction.id ?? "unknown")")
+        print("📊 Sales details: Customer: \(salesTransaction.customerName), Credit: \(salesTransaction.credit)")
+        
+        // Step 1: Reverse customer balance (customer received credit, so SUBTRACT it)
+        if let customerId = salesTransaction.customerId, salesTransaction.credit != 0 {
+            try await reverseCustomerBalance(
+                customerId: customerId,
+                amount: salesTransaction.credit,
+                batch: batch,
+                isSubtraction: true  // Remove the credit they received
+            )
+            print("🔄 Reversed customer balance: -\(salesTransaction.credit)")
+        }
+        
+        // Step 2: Reverse middleman balance (if applicable - middleman received credit, so SUBTRACT it)
+        if let middlemanId = salesTransaction.middlemanId, let mCredit = salesTransaction.mCredit, mCredit != 0 {
+            try await reverseCustomerBalance(
+                customerId: middlemanId,
+                amount: mCredit,
+                batch: batch,
+                isSubtraction: true  // Remove the credit they received
+            )
+            print("🔄 Reversed middleman balance: -\(mCredit)")
+        }
+        
+        // Step 3: Delete the sales transaction record
+        if let transactionId = salesTransaction.id {
+            let transactionRef = db.collection("Sales").document(transactionId)
+            batch.deleteDocument(transactionRef)
+        }
+        
+        // Step 4: Commit all changes
+        try await batch.commit()
+        print("✅ Sales transaction reversal completed successfully")
+    }
+    
+    private func reverseCustomerBalance(customerId: String, amount: Double, batch: WriteBatch, isSubtraction: Bool = false) async throws {
+        let db = Firestore.firestore()
+        
+        // Determine which collection this customer belongs to
+        let customerType = try await getCustomerType(customerId: customerId)
+        let collectionName = "\(customerType.rawValue)s"
+        
+        // Reverse CAD balance in the appropriate collection
+        let customerRef = db.collection(collectionName).document(customerId)
+        
+        let customerDoc = try await customerRef.getDocument()
+        guard customerDoc.exists else {
+            throw NSError(domain: "TransactionError", code: 404, userInfo: [NSLocalizedDescriptionKey: "\(customerType.displayName) not found"])
+        }
+        
+        let currentBalance = customerDoc.data()?["balance"] as? Double ?? 0.0
+        let newBalance = isSubtraction ? currentBalance - amount : currentBalance + amount
+        
+        print("🔄 Reversing \(customerType.displayName) balance: \(currentBalance) \(isSubtraction ? "-" : "+") \(amount) = \(newBalance)")
+        batch.updateData(["balance": newBalance, "updatedAt": Timestamp()], forDocument: customerRef)
+    }
+    
+    private func getCustomerType(customerId: String) async throws -> CustomerType {
+        let db = Firestore.firestore()
+        
+        // Check in Customers collection first
+        let customersRef = db.collection("Customers").document(customerId)
+        let customersDoc = try await customersRef.getDocument()
+        if customersDoc.exists {
+            return .customer
+        }
+        
+        // Check in Middlemen collection
+        let middlemenRef = db.collection("Middlemen").document(customerId)
+        let middlemenDoc = try await middlemenRef.getDocument()
+        if middlemenDoc.exists {
+            return .middleman
+        }
+        
+        // Check in Suppliers collection
+        let suppliersRef = db.collection("Suppliers").document(customerId)
+        let suppliersDoc = try await suppliersRef.getDocument()
+        if suppliersDoc.exists {
+            return .supplier
+        }
+        
+        throw NSError(domain: "TransactionError", code: 404, userInfo: [NSLocalizedDescriptionKey: "Customer not found in any collection"])
     }
 }
